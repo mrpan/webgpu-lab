@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>01 · WebGPU 环境检测 | webgpu-lab</title>
+<link rel="icon" href="data:,">
+<style>
+  :root {
+    --bg: #f7f7f5; --fg: #1d1d1f; --muted: #6b6b70; --card: #ffffff; --line: #e3e3e0;
+    --ok: #1a7f37; --bad: #c62828; --warn: #9a6700; --accent: #2f5bea;
+    --mono: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #121214; --fg: #e8e8ea; --muted: #9a9aa2; --card: #1b1b1f; --line: #2c2c32;
+      --ok: #4ac26b; --bad: #ff6b6b; --warn: #d4a72c; --accent: #6f8fff;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg);
+    font: 15px/1.6 system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 24px 16px 48px; }
+  a { color: var(--accent); }
+  h1 { font-size: 1.4rem; margin: 8px 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 20px; }
+  section { background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+    padding: 14px 16px; margin: 0 0 14px; }
+  h2 { font-size: 1rem; margin: 0 0 8px; }
+  .table-wrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: .9rem; }
+  th, td { text-align: left; padding: 6px 8px; border-top: 1px solid var(--line); vertical-align: top; }
+  thead th { color: var(--muted); font-weight: 500; border-top: 0; }
+  code { font-family: var(--mono); font-size: .85rem; word-break: break-all; }
+  .ok { color: var(--ok); } .bad { color: var(--bad); } .warn { color: var(--warn); }
+  .note { color: var(--muted); font-size: .85rem; margin: 8px 0 0; }
+  .tags { display: flex; flex-wrap: wrap; gap: 6px; }
+  .tags code { border: 1px solid var(--line); border-radius: 6px; padding: 1px 6px; }
+  #status { font-weight: 600; }
+  button { font: inherit; border: 0; background: var(--accent); color: #fff; border-radius: 8px;
+    padding: 8px 14px; cursor: pointer; }
+  pre { font-family: var(--mono); font-size: .8rem; white-space: pre-wrap; word-break: break-all;
+    background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px; margin: 10px 0 0; }
+  summary { cursor: pointer; }
+</style>
+</head>
+<body>
+<main>
+  <a href="./">← 01 实验索引</a>
+  <h1>WebGPU 环境检测</h1>
+  <p class="sub">打开即运行，不上传任何数据。看看你的浏览器和显卡能不能跑 WebGPU，以及它给了多大的空间。</p>
+
+  <section><div id="status">检测中……</div></section>
+
+  <section>
+    <h2>1. 浏览器环境</h2>
+    <div class="table-wrap"><table><tbody id="env"></tbody></table></div>
+  </section>
+
+  <section>
+    <h2>2. 适配器信息 <code>adapter.info</code></h2>
+    <div class="table-wrap"><table><tbody id="info"></tbody></table></div>
+  </section>
+
+  <section>
+    <h2>3. 关键限制：适配器 vs 设备</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>限制</th><th>含义</th><th>adapter.limits</th><th>device.limits</th></tr></thead>
+      <tbody id="limits"></tbody>
+    </table></div>
+    <p class="note" id="limits-note"></p>
+    <details>
+      <summary>adapter.limits 全部字段</summary>
+      <div class="table-wrap"><table><tbody id="limits-all"></tbody></table></div>
+    </details>
+  </section>
+
+  <section>
+    <h2>4. 可选特性 <code>features</code></h2>
+    <p class="note">适配器支持的：</p>
+    <div class="tags" id="features-adapter"></div>
+    <p class="note">设备实际启用的：</p>
+    <div class="tags" id="features-device"></div>
+  </section>
+
+  <section>
+    <h2>5. WGSL 语言特性 <code>navigator.gpu.wgslLanguageFeatures</code></h2>
+    <div class="tags" id="wgsl"></div>
+  </section>
+
+  <section>
+    <h2>6. 复制检测结果</h2>
+    <button id="copy" type="button">复制为文本</button>
+    <span id="copy-msg" class="note"></span>
+    <pre id="report"></pre>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const report = [];
+
+const KEY_LIMITS = [
+  ['maxBufferSize', '单个 GPUBuffer 的最大字节数'],
+  ['maxStorageBufferBindingSize', '单个 storage buffer 绑定的最大字节数'],
+  ['maxUniformBufferBindingSize', '单个 uniform buffer 绑定的最大字节数'],
+  ['maxVertexBuffers', '一条渲染管线最多挂几个顶点缓冲区'],
+  ['maxVertexAttributes', '顶点属性（位置、颜色……）最多几个'],
+  ['maxTextureDimension2D', '2D 纹理的最大边长（像素）'],
+  ['maxBindGroups', '一条管线最多几个 bind group'],
+  ['maxComputeWorkgroupsPerDimension', '计算着色器每个维度最多派发几组'],
+];
+
+function fmtBytes(v) {
+  if (v >= 1024 ** 3) return `${v.toLocaleString()}（${(v / 1024 ** 3).toFixed(1)} GB）`;
+  if (v >= 1024 ** 2) return `${v.toLocaleString()}（${(v / 1024 ** 2).toFixed(0)} MB）`;
+  if (v >= 1024) return `${v.toLocaleString()}（${(v / 1024).toFixed(0)} KB）`;
+  return v.toLocaleString();
+}
+
+function fmtLimit(name, v) {
+  if (v === undefined) return '—';
+  return name.endsWith('Size') ? fmtBytes(v) : v.toLocaleString();
+}
+
+function row(tbody, cells) {
+  const tr = document.createElement('tr');
+  cells.forEach((c, i) => {
+    const td = document.createElement(i === 0 ? 'th' : 'td');
+    if (c instanceof Node) td.append(c); else td.textContent = String(c);
+    tr.append(td);
+  });
+  $(tbody).append(tr);
+}
+
+function flag(ok, yes = '是', no = '否') {
+  const s = document.createElement('span');
+  s.className = ok ? 'ok' : 'bad';
+  s.textContent = ok ? yes : no;
+  return s;
+}
+
+function tags(id, list) {
+  const box = $(id);
+  if (!list || list.length === 0) {
+    box.textContent = '（无）';
+    return;
+  }
+  for (const name of list) {
+    const c = document.createElement('code');
+    c.textContent = name;
+    box.append(c);
+  }
+}
+
+function setStatus(cls, text) {
+  $('status').className = cls;
+  $('status').textContent = text;
+  report.push(`结论: ${text}`);
+}
+
+function finish() {
+  $('report').textContent = report.join('\n');
+}
+
+async function run() {
+  report.push(`[webgpu-lab 01 环境检测] ${new Date().toISOString()}`);
+  report.push(`UA: ${navigator.userAgent}`);
+
+  const secure = window.isSecureContext;
+  const hasGPU = 'gpu' in navigator;
+  row('env', ['安全上下文（HTTPS）', flag(secure)]);
+  row('env', ['navigator.gpu', flag(hasGPU, '有', '没有')]);
+  report.push(`安全上下文: ${secure}`, `navigator.gpu: ${hasGPU}`);
+
+  if (!hasGPU) {
+    setStatus('bad', '这个浏览器没有暴露 navigator.gpu，WebGPU 用不了。' +
+      (secure ? '' : '当前页面不是安全上下文，WebGPU 只在 HTTPS 或 localhost 下可用。'));
+    return finish();
+  }
+
+  const format = navigator.gpu.getPreferredCanvasFormat();
+  row('env', ['首选画布格式 getPreferredCanvasFormat()', format]);
+  report.push(`首选画布格式: ${format}`);
+
+  let adapter;
+  try {
+    adapter = await navigator.gpu.requestAdapter();
+  } catch (e) {
+    setStatus('bad', `requestAdapter() 抛错：${e.message}`);
+    return finish();
+  }
+  if (!adapter) {
+    setStatus('bad', 'requestAdapter() 返回了 null：浏览器支持 WebGPU，但没拿到可用的 GPU 适配器。');
+    return finish();
+  }
+
+  const info = adapter.info;
+  if (info) {
+    const fields = ['vendor', 'architecture', 'device', 'description', 'isFallbackAdapter',
+      'subgroupMinSize', 'subgroupMaxSize'];
+    for (const f of fields) {
+      if (info[f] === undefined) continue;
+      const v = info[f] === '' ? '（空字符串，浏览器未提供）' : info[f];
+      row('info', [f, String(v)]);
+      report.push(`adapter.info.${f}: ${info[f]}`);
+    }
+  } else {
+    row('info', ['adapter.info', '这个浏览器还没实现 adapter.info。本页不调用已从规范中删除的 requestAdapterInfo()。']);
+    report.push('adapter.info: 未实现');
+  }
+
+  let device;
+  try {
+    device = await adapter.requestDevice();
+  } catch (e) {
+    report.push(`requestDevice() 抛错: ${e.message}`);
+  }
+
+  report.push('limits（adapter / device）:');
+  let differs = 0;
+  for (const [name, desc] of KEY_LIMITS) {
+    const a = adapter.limits[name];
+    const d = device ? device.limits[name] : undefined;
+    if (a !== undefined && d !== undefined && a !== d) differs++;
+    row('limits', [name, desc, fmtLimit(name, a), fmtLimit(name, d)]);
+    report.push(`  ${name}: ${a} / ${d}`);
+  }
+  if (device) {
+    const points = Math.floor(device.limits.maxBufferSize / 8);
+    $('limits-note').textContent =
+      `按一个二维点占 8 字节（x、y 各一个 float32）粗算，设备上单个缓冲区最多放约 ${points.toLocaleString()} 个点。` +
+      (differs ? ` 上表有 ${differs} 项 device 小于 adapter：requestDevice() 没传 requiredLimits 时，设备拿到的不是适配器的上限。` : '');
+    report.push(`单缓冲区可放二维点（粗算）: ${points}`);
+  }
+
+  const all = [];
+  for (const name in adapter.limits) all.push(name);
+  all.sort().forEach((name) => row('limits-all', [name, fmtLimit(name, adapter.limits[name])]));
+
+  const fa = [...adapter.features].sort();
+  const fd = device ? [...device.features].sort() : [];
+  tags('features-adapter', fa);
+  tags('features-device', fd);
+  report.push(`features（adapter）: ${fa.join(', ') || '无'}`);
+  report.push(`features（device）: ${fd.join(', ') || '无'}`);
+
+  const wgsl = navigator.gpu.wgslLanguageFeatures ? [...navigator.gpu.wgslLanguageFeatures].sort() : null;
+  if (wgsl) tags('wgsl', wgsl); else $('wgsl').textContent = '这个浏览器没有提供 wgslLanguageFeatures。';
+  report.push(`wgslLanguageFeatures: ${wgsl ? wgsl.join(', ') || '无' : '未提供'}`);
+
+  if (device) {
+    const fallback = info && info.isFallbackAdapter;
+    setStatus(fallback ? 'warn' : 'ok', fallback
+      ? '能跑 WebGPU，但拿到的是软件回退适配器（性能会很差）。'
+      : '能跑 WebGPU：适配器和设备都拿到了。');
+  } else {
+    setStatus('bad', '拿到了适配器，但 requestDevice() 失败。');
+  }
+  finish();
+}
+
+$('copy').addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText($('report').textContent);
+    $('copy-msg').textContent = ' 已复制';
+  } catch {
+    $('copy-msg').textContent = ' 复制失败，请手动选中下方文本';
+  }
+});
+
+run().catch((e) => {
+  setStatus('bad', `检测过程出错：${e.message}`);
+  finish();
+});
+</script>
+</body>
+</html>
