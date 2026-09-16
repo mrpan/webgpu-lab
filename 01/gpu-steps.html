@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>01 · GPU 入口步进器 | webgpu-lab</title>
+<link rel="icon" href="data:,">
+<style>
+  :root {
+    --bg: #f7f7f5; --fg: #1d1d1f; --muted: #6b6b70; --card: #ffffff; --line: #e3e3e0;
+    --ok: #1a7f37; --ok-bg: #e7f5ec; --bad: #c62828; --bad-bg: #fdecec; --run: #2f5bea; --run-bg: #eaf0ff;
+    --accent: #2f5bea; --code-bg: #f0f0ed;
+    --mono: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #121214; --fg: #e8e8ea; --muted: #9a9aa2; --card: #1b1b1f; --line: #2c2c32;
+      --ok: #4ac26b; --ok-bg: #16281c; --bad: #ff6b6b; --bad-bg: #2d1717; --run: #7b9bff; --run-bg: #1a2240;
+      --accent: #6f8fff; --code-bg: #232328;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg);
+    font: 15px/1.6 system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; }
+  main { max-width: 900px; margin: 0 auto; padding: 24px 16px 48px; }
+  a { color: var(--accent); }
+  h1 { font-size: 1.4rem; margin: 8px 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 20px; }
+  code { font-family: var(--mono); font-size: .85rem; }
+
+  .chain { display: flex; align-items: stretch; gap: 8px; margin: 0 0 16px; }
+  .arrow { display: flex; align-items: center; color: var(--muted); font-size: 1.2rem; }
+  .node { flex: 1; min-width: 0; background: var(--card); border: 2px solid var(--line); border-radius: 12px;
+    padding: 12px 14px; transition: border-color .2s, background .2s; }
+  .node h2 { font-size: 1rem; margin: 0; display: flex; align-items: center; gap: 8px; }
+  .node .api { color: var(--muted); font-size: .8rem; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--line); flex: none; }
+  .state { font-size: .8rem; color: var(--muted); margin: 2px 0 8px; }
+  .node[data-state="run"] { border-color: var(--run); background: var(--run-bg); }
+  .node[data-state="run"] .dot { background: var(--run); }
+  .node[data-state="ok"] { border-color: var(--ok); background: var(--ok-bg); }
+  .node[data-state="ok"] .dot { background: var(--ok); }
+  .node[data-state="bad"] { border-color: var(--bad); background: var(--bad-bg); }
+  .node[data-state="bad"] .dot { background: var(--bad); }
+  .node[hidden] { display: none; }
+  dl { margin: 0; font-size: .82rem; display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; }
+  dt { color: var(--muted); }
+  dd { margin: 0; font-family: var(--mono); word-break: break-all; }
+  .spec { margin: 8px 0 0; font-size: .78rem; color: var(--muted); border-top: 1px dashed var(--line); padding-top: 6px; }
+
+  .panel { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin: 0 0 14px; }
+  .panel h3 { font-size: .95rem; margin: 0 0 10px; }
+  .buttons { display: flex; flex-wrap: wrap; gap: 8px; }
+  button { font: inherit; font-size: .9rem; border: 1px solid var(--accent); background: var(--accent); color: #fff;
+    border-radius: 8px; padding: 7px 12px; cursor: pointer; }
+  button.ghost { background: transparent; color: var(--accent); }
+  button:disabled { opacity: .35; cursor: not-allowed; }
+
+  .code { font-family: var(--mono); font-size: .82rem; background: var(--code-bg); border-radius: 8px; padding: 8px 0; overflow-x: auto; }
+  .code div { padding: 2px 12px; white-space: pre; border-left: 3px solid transparent; }
+  .code div.active { border-left-color: var(--run); background: var(--run-bg); }
+  .code div.done { color: var(--muted); }
+  #log { font-family: var(--mono); font-size: .8rem; margin: 0; padding: 0; list-style: none; max-height: 260px; overflow-y: auto; }
+  #log li { padding: 3px 0; border-top: 1px solid var(--line); word-break: break-all; }
+  #log li:first-child { border-top: 0; }
+  #log .bad { color: var(--bad); } #log .ok { color: var(--ok); } #log .sep { color: var(--muted); }
+
+  @media (max-width: 640px) {
+    .chain { flex-direction: column; }
+    .arrow { justify-content: center; transform: rotate(90deg); }
+  }
+</style>
+</head>
+<body>
+<main>
+  <a href="./">← 01 实验索引</a>
+  <h1>GPU 入口步进器</h1>
+  <p class="sub">WebGPU 要一层一层才能拿到可用的 GPU。按顺序点按钮，每一步都是真实调用，框里显示的是你这台电脑的返回值。</p>
+
+  <div class="chain">
+    <section class="node" id="n-gpu" data-state="idle">
+      <h2><span class="dot"></span>浏览器</h2>
+      <div class="api"><code>navigator.gpu</code></div>
+      <div class="state">未开始</div>
+      <dl></dl>
+    </section>
+    <div class="arrow">→</div>
+    <section class="node" id="n-adapter" data-state="idle">
+      <h2><span class="dot"></span>适配器</h2>
+      <div class="api"><code>GPUAdapter</code></div>
+      <div class="state">未开始</div>
+      <dl></dl>
+    </section>
+    <div class="arrow">→</div>
+    <section class="node" id="n-device" data-state="idle">
+      <h2><span class="dot"></span>设备</h2>
+      <div class="api"><code>GPUDevice</code></div>
+      <div class="state">未开始</div>
+      <dl></dl>
+    </section>
+    <div class="arrow" id="a-device2" hidden>→</div>
+    <section class="node" id="n-device2" data-state="idle" hidden>
+      <h2><span class="dot"></span>设备 #2</h2>
+      <div class="api"><code>同一个 adapter 再要一次</code></div>
+      <div class="state">未开始</div>
+      <dl></dl>
+    </section>
+  </div>
+
+  <section class="panel">
+    <h3>操作</h3>
+    <div class="buttons">
+      <button id="b1" type="button">① 检查 navigator.gpu</button>
+      <button id="b2" type="button" disabled>② requestAdapter()</button>
+      <button id="b3" type="button" disabled>③ adapter.requestDevice()</button>
+      <button id="b4" type="button" disabled>④ 用同一个 adapter 再要一个 device</button>
+      <button id="reset" type="button" class="ghost">重来</button>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h3>正在执行的代码</h3>
+    <div class="code" id="code">
+      <div data-line="1">if (!('gpu' in navigator)) throw new Error('不支持 WebGPU');</div>
+      <div data-line="2">const adapter = await navigator.gpu.requestAdapter();</div>
+      <div data-line="3">const device = await adapter.requestDevice();</div>
+      <div data-line="4">const device2 = await adapter.requestDevice(); // 同一个 adapter</div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h3>调用记录</h3>
+    <ol id="log"></ol>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+let adapter = null;
+let device = null;
+let device2 = null;
+let run = 0; // 每次“重来”加 1，丢弃旧一轮的异步回调
+
+function log(text, cls = '') {
+  const li = document.createElement('li');
+  li.textContent = text;
+  if (cls) li.className = cls;
+  $('log').append(li);
+  $('log').scrollTop = $('log').scrollHeight;
+}
+
+function setNode(id, state, label, rows = [], spec = '') {
+  const node = $(id);
+  node.dataset.state = state;
+  node.querySelector('.state').textContent = label;
+  const dl = node.querySelector('dl');
+  dl.replaceChildren();
+  for (const [k, v] of rows) {
+    const dt = document.createElement('dt');
+    const dd = document.createElement('dd');
+    dt.textContent = k;
+    dd.textContent = v === '' ? '（空字符串）' : String(v);
+    dl.append(dt, dd);
+  }
+  node.querySelector('.spec')?.remove();
+  if (spec) {
+    const p = document.createElement('p');
+    p.className = 'spec';
+    p.textContent = spec;
+    node.append(p);
+  }
+}
+
+function setCode(active) {
+  for (const div of $('code').children) {
+    const n = Number(div.dataset.line);
+    div.className = n === active ? 'active' : n < active ? 'done' : '';
+  }
+}
+
+function mb(v) {
+  if (v >= 1024 ** 3) return `${v.toLocaleString()}（${(v / 1024 ** 3).toFixed(1)} GB）`;
+  return `${v.toLocaleString()}（${(v / 1024 ** 2).toFixed(0)} MB）`;
+}
+
+function watchLost(dev, nodeId, name, myRun) {
+  dev.lost.then((info) => {
+    log(`${name}.lost → reason: ${info.reason}，message: ${info.message || '（空）'}`, 'bad');
+    if (myRun !== run) return;
+    setNode(nodeId, 'bad', `已 lost（${info.reason}）`, [
+      ['reason', info.reason],
+      ['message', info.message || '（空）'],
+    ]);
+  });
+}
+
+$('b1').addEventListener('click', () => {
+  setCode(1);
+  const has = 'gpu' in navigator;
+  const secure = window.isSecureContext;
+  log(`'gpu' in navigator → ${has}；isSecureContext → ${secure}`, has ? 'ok' : 'bad');
+  if (!has) {
+    setNode('n-gpu', 'bad', '没有 navigator.gpu', [['isSecureContext', secure]],
+      '没有这个入口，后面两步都走不下去。WebGPU 只在安全上下文（HTTPS / localhost）里开放。');
+    return;
+  }
+  setNode('n-gpu', 'ok', '浏览器实现了 WebGPU', [
+    ['isSecureContext', secure],
+    ['首选画布格式', navigator.gpu.getPreferredCanvasFormat()],
+  ], '有入口不代表一定有可用的 GPU，要到下一步才知道。');
+  $('b1').disabled = true;
+  $('b2').disabled = false;
+});
+
+$('b2').addEventListener('click', async () => {
+  const myRun = run;
+  setCode(2);
+  $('b2').disabled = true;
+  setNode('n-adapter', 'run', '请求中……');
+  let a;
+  try {
+    a = await navigator.gpu.requestAdapter();
+  } catch (e) {
+    log(`requestAdapter() 抛错：${e.message}`, 'bad');
+    setNode('n-adapter', 'bad', '抛错', [['error', e.message]]);
+    return;
+  }
+  if (myRun !== run) return;
+  if (!a) {
+    log('requestAdapter() → null', 'bad');
+    setNode('n-adapter', 'bad', '返回 null', [], '不是报错，而是返回 null：浏览器支持 WebGPU，但没有合适的适配器。');
+    return;
+  }
+  adapter = a;
+  const info = a.info || {};
+  log(`requestAdapter() → GPUAdapter（${info.vendor || '?'} / ${info.architecture || '?'}）`, 'ok');
+  setNode('n-adapter', 'ok', '拿到适配器', [
+    ['vendor', info.vendor ?? '—'],
+    ['architecture', info.architecture ?? '—'],
+    ['features', `${a.features.size} 项`],
+    ['maxBufferSize', mb(a.limits.maxBufferSize)],
+  ], '这是这块 GPU“最多能给多少”。还不能画东西，要创建 device。');
+  $('b3').disabled = false;
+});
+
+$('b3').addEventListener('click', async () => {
+  const myRun = run;
+  setCode(3);
+  $('b3').disabled = true;
+  setNode('n-device', 'run', '创建中……');
+  let d;
+  try {
+    d = await adapter.requestDevice();
+  } catch (e) {
+    log(`requestDevice() 抛错：${e.message}`, 'bad');
+    setNode('n-device', 'bad', '抛错', [['error', e.message]]);
+    return;
+  }
+  if (myRun !== run) { d.destroy(); return; }
+  device = d;
+  log(`adapter.requestDevice() → GPUDevice，maxBufferSize ${d.limits.maxBufferSize}`, 'ok');
+  setNode('n-device', 'ok', '设备可用', [
+    ['features', `${d.features.size} 项`],
+    ['maxBufferSize', mb(d.limits.maxBufferSize)],
+  ], '没传 requiredLimits / requiredFeatures，拿到的是默认值，不是适配器的上限。');
+  const a = $('n-adapter');
+  a.querySelector('.state').textContent = '拿到适配器 · 已用来创建 device';
+  a.querySelector('.spec').textContent = '规范：一个 adapter 只能用来创建一个 device（这一行是规范说明，不是 API 返回值）。';
+  watchLost(d, 'n-device', 'device', myRun);
+  $('b4').disabled = false;
+});
+
+$('b4').addEventListener('click', async () => {
+  const myRun = run;
+  setCode(4);
+  $('b4').disabled = true;
+  $('a-device2').hidden = false;
+  $('n-device2').hidden = false;
+  setNode('n-device2', 'run', '创建中……');
+  let d;
+  try {
+    d = await adapter.requestDevice();
+  } catch (e) {
+    log(`第二次 requestDevice() 抛错：${e.name}: ${e.message}`, 'bad');
+    setNode('n-device2', 'bad', '抛错', [['error', `${e.name}: ${e.message}`]]);
+    return;
+  }
+  if (myRun !== run) { d.destroy(); return; }
+  device2 = d;
+  log('第二次 requestDevice() → 没有抛错，返回了一个 GPUDevice', 'ok');
+  setNode('n-device2', 'ok', '返回了 device，看看它的 lost……');
+  const info = await Promise.race([d.lost, sleep(1500).then(() => null)]);
+  if (myRun !== run) return;
+  if (info) {
+    log(`device2.lost → reason: ${info.reason}，message: ${info.message || '（空）'}`, 'bad');
+    setNode('n-device2', 'bad', '一出来就是 lost', [
+      ['reason', info.reason],
+      ['message', info.message || '（空）'],
+    ], '没有抛异常，代码会继续往下走。不去看 device.lost，很难发现它其实用不了。');
+  } else {
+    log('device2 在 1.5 秒内没有 lost（不同浏览器行为可能不同）');
+    setNode('n-device2', 'ok', '1.5 秒内没有 lost', [], '这个浏览器的表现和 Chrome 不同，可以把结果记下来。');
+  }
+});
+
+$('reset').addEventListener('click', () => {
+  run++;
+  log('—— 重来：destroy 已创建的 device，重新从第 ① 步开始 ——', 'sep');
+  device?.destroy();
+  device2?.destroy();
+  adapter = device = device2 = null;
+  for (const id of ['n-gpu', 'n-adapter', 'n-device', 'n-device2']) setNode(id, 'idle', '未开始');
+  $('a-device2').hidden = true;
+  $('n-device2').hidden = true;
+  setCode(0);
+  $('b1').disabled = false;
+  for (const id of ['b2', 'b3', 'b4']) $(id).disabled = true;
+});
+</script>
+</body>
+</html>
