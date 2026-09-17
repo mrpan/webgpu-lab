@@ -8,7 +8,7 @@ https://mrpan.github.io/webgpu-lab/
 
 | 目录 | 对应文章 | 实验 |
 |------|---------|------|
-| `01/` | AI学WebGPU①：我的浏览器能跑WebGPU吗 | `env-check.html` WebGPU 环境检测；`gpu-steps.html` GPU 入口步进器 |
+| `01/` | AI学WebGPU①：我的浏览器能跑WebGPU吗 | `webgpu-stack.html` WebGPU 分层结构；`env-check.html` WebGPU 环境检测；`gpu-steps.html` GPU 入口步进器 |
 
 纯静态 HTML，无构建步骤、无外部依赖，单个文件可直接复制运行。
 WebGPU 只在安全上下文（HTTPS 或 localhost）下可用，本地调试请起一个本地服务，例如：

@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>01 · WebGPU 分层结构 | webgpu-lab</title>
+<link rel="icon" href="data:,">
+<style>
+  :root {
+    --bg: #f7f7f5; --fg: #1d1d1f; --muted: #6b6b70; --card: #ffffff; --line: #d9d9d4;
+    --on: #2f5bea; --on-bg: #eaf0ff; --ok: #1a7f37; --group: #fbfbf9; --code-bg: #f0f0ed;
+    --mono: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #121214; --fg: #e8e8ea; --muted: #9a9aa2; --card: #1b1b1f; --line: #34343b;
+      --on: #7b9bff; --on-bg: #1a2240; --ok: #4ac26b; --group: #17171a; --code-bg: #232328;
+    }
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body { margin: 0; background: var(--bg); color: var(--fg);
+    font: 15px/1.6 system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; }
+  main { max-width: 860px; margin: 0 auto; padding: 20px 16px 40px; }
+  a { color: var(--on); }
+  h1 { font-size: 1.35rem; margin: 6px 0 2px; }
+  .sub { color: var(--muted); margin: 0 0 14px; font-size: .92rem; }
+  body.rec main > a, body.rec h1, body.rec .sub, body.rec .controls { display: none; }
+  body.rec main { padding-top: 16px; }
+
+  .stage { display: grid; gap: 6px; }
+  .row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .links { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; text-align: center;
+    color: var(--muted); line-height: 1; height: 18px; }
+  .links.single { grid-template-columns: 1fr; }
+  .group { position: relative; border: 1.5px solid var(--line); border-radius: 12px; background: var(--group);
+    padding: 12px 12px 12px 112px; display: grid; gap: 8px; }
+  .glabel { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); width: 88px;
+    font-weight: 600; font-size: .95rem; line-height: 1.3; }
+  .glabel small { display: block; font-weight: 400; color: var(--muted); font-size: .75rem; }
+  .apps, .links.l-app { padding-left: 113.5px; padding-right: 13.5px; }
+
+  .box { background: var(--card); border: 1.5px solid var(--line); border-radius: 10px; padding: 8px 10px;
+    text-align: center; transition: border-color .35s, background .35s, opacity .35s, transform .35s; min-height: 58px; }
+  .box b { display: block; font-size: .95rem; }
+  .box small { display: block; color: var(--muted); font-size: .72rem; font-family: var(--mono); }
+  .box .val { display: block; font-family: var(--mono); font-size: .72rem; color: var(--ok); min-height: 1em; word-break: break-all; }
+  .stack { padding: 0; overflow: hidden; }
+  .stack > div { padding: 8px 10px; }
+  .stack > div + div { border-top: 1.5px solid var(--line); }
+
+  .stage.focus .box, .stage.focus .stack > div { opacity: .35; }
+  .stage.focus .on, .stage.focus .stack > div.on { opacity: 1; }
+  .box.on { border-color: var(--on); background: var(--on-bg); transform: scale(1.02); }
+  .stack > div.on { background: var(--on-bg); }
+  .stack:has(> div.on) { border-color: var(--on); opacity: 1; }
+  .link-on { color: var(--on); font-weight: 700; }
+
+  .caption { margin-top: 14px; background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+    padding: 12px 16px; min-height: 132px; }
+  .caption .step { color: var(--on); font-weight: 700; font-size: .85rem; }
+  .caption h2 { font-size: 1.05rem; margin: 2px 0 4px; }
+  .caption p { margin: 0; }
+  .caption code.line { display: inline-block; margin-top: 8px; background: var(--code-bg); border-radius: 6px;
+    padding: 2px 8px; font-family: var(--mono); font-size: .8rem; }
+  .source { color: var(--muted); font-size: .75rem; margin: 8px 0 0; }
+
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 0; }
+  button { font: inherit; font-size: .9rem; border: 1px solid var(--on); background: var(--on); color: #fff;
+    border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+  button.ghost { background: transparent; color: var(--on); }
+  button:disabled { opacity: .35; cursor: not-allowed; }
+
+  @media (max-width: 560px) {
+    .group { padding-left: 12px; padding-top: 34px; }
+    .glabel { top: 8px; transform: none; width: auto; }
+    .glabel small { display: inline; margin-left: 6px; }
+    .apps, .links.l-app { padding-left: 13.5px; padding-right: 13.5px; }
+    .box b { font-size: .82rem; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <a href="./">← 01 实验索引</a>
+  <h1>WebGPU 分层结构</h1>
+  <p class="sub">从网页到 GPU 中间隔着几层。“逐层讲解”按 MDN 的模型从下往上走；“用我的电脑走一遍”会真实调用 WebGPU，把你这台电脑的返回值填进对应的层。</p>
+
+  <div class="stage" id="stage">
+    <div class="row apps">
+      <div class="box" id="app-me"><b>本页</b><small>Web app</small><span class="val"></span></div>
+      <div class="box" id="app-2"><b>其他网页</b><small>Web app</small><span class="val"></span></div>
+      <div class="box" id="app-3"><b>其他网页</b><small>Web app</small><span class="val"></span></div>
+    </div>
+    <div class="links l-app"><span id="k-1">↕</span><span id="k-2">↕</span><span id="k-3">↕</span></div>
+    <div class="group">
+      <div class="glabel">WebGPU<small>浏览器的实现</small></div>
+      <div class="row">
+        <div class="box" id="ld-me"><b>逻辑设备</b><small>GPUDevice</small><span class="val"></span></div>
+        <div class="box" id="ld-2"><b>逻辑设备</b><small>GPUDevice</small><span class="val"></span></div>
+        <div class="box" id="ld-3"><b>逻辑设备</b><small>GPUDevice</small><span class="val"></span></div>
+      </div>
+      <div class="box" id="adapter"><b>适配器</b><small>GPUAdapter</small><span class="val"></span></div>
+    </div>
+    <div class="links single"><span id="k-a">↕</span></div>
+    <div class="group">
+      <div class="glabel">底层系统<small>操作系统 + 硬件</small></div>
+      <div class="box stack" id="sys">
+        <div id="native"><b>原生 GPU API</b><small>Native GPU API</small></div>
+        <div id="driver"><b>驱动</b><small>Driver</small></div>
+      </div>
+      <div class="box" id="gpu"><b>GPU</b><small>显卡</small><span class="val"></span></div>
+    </div>
+  </div>
+
+  <section class="caption" id="caption">
+    <div class="step" id="c-step">准备好了</div>
+    <h2 id="c-title">点“逐层讲解”或“用我的电脑走一遍”</h2>
+    <p id="c-text">这张图的结构参考 MDN《WebGPU API》的 General model 一节。</p>
+    <code class="line" id="c-code" hidden></code>
+  </section>
+  <p class="source">结构参考：MDN · WebGPU API · General model（developer.mozilla.org/en-US/docs/Web/API/WebGPU_API）</p>
+
+  <div class="controls">
+    <button id="b-prev" type="button" class="ghost" disabled>上一层</button>
+    <button id="b-tour" type="button">逐层讲解</button>
+    <button id="b-next" type="button" class="ghost" disabled>下一层</button>
+    <button id="b-live" type="button">用我的电脑走一遍</button>
+  </div>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const params = new URLSearchParams(location.search);
+if (params.has('rec')) document.body.classList.add('rec');
+
+const TOUR = [
+  {
+    on: ['gpu'], title: 'GPU',
+    text: '物理设备上的 GPU。可能是和 CPU 共用内存的集成显卡、单独一块板子的独立显卡，也可能是用 CPU 实现的软件“GPU”。',
+  },
+  {
+    on: ['native', 'driver'], title: '原生 GPU API 和驱动',
+    text: '操作系统提供的原生 GPU API（比如 macOS 上的 Metal），本地应用靠它使用 GPU；指令经过驱动发给 GPU，结果也从驱动返回。',
+  },
+  {
+    on: ['adapter'], links: ['k-a'], title: '适配器 Adapter',
+    text: '浏览器的 WebGPU 实现，通过原生 API 和驱动跟 GPU 打交道。在代码里，adapter 就代表底下这一套：一块物理 GPU 加上它的驱动。',
+    code: 'const adapter = await navigator.gpu.requestAdapter();',
+  },
+  {
+    on: ['ld-me', 'ld-2', 'ld-3'], title: '逻辑设备 Logical device',
+    text: '同一块 GPU 同时被很多应用、很多网页使用。出于安全和逻辑上的原因，每个网页都通过自己的逻辑设备，隔离地使用 GPU。',
+    code: 'const device = await adapter.requestDevice();',
+  },
+  {
+    on: ['app-me', 'app-2', 'app-3'], links: ['k-1', 'k-2', 'k-3'], title: '网页 Web app',
+    text: '网页代码通过自己的逻辑设备使用 GPU，彼此隔离。后面的缓冲区、着色器、渲染，都是在 device 上创建的。',
+  },
+];
+
+let tourIndex = -1;
+let busy = false;
+
+function focus(ids = [], links = []) {
+  const stage = $('stage');
+  stage.classList.toggle('focus', ids.length > 0);
+  stage.querySelectorAll('.on').forEach((el) => el.classList.remove('on'));
+  stage.querySelectorAll('.link-on').forEach((el) => el.classList.remove('link-on'));
+  ids.forEach((id) => $(id).classList.add('on'));
+  links.forEach((id) => $(id).classList.add('link-on'));
+}
+
+function caption(step, title, text, code) {
+  $('c-step').textContent = step;
+  $('c-title').textContent = title;
+  $('c-text').textContent = text;
+  $('c-code').hidden = !code;
+  $('c-code').textContent = code || '';
+}
+
+function val(id, text) {
+  $(id).querySelector('.val').textContent = text;
+}
+
+function showTour(i) {
+  tourIndex = i;
+  const s = TOUR[i];
+  focus(s.on, s.links);
+  caption(`逐层讲解 · ${i + 1} / ${TOUR.length}（从下往上）`, s.title, s.text, s.code);
+  $('b-prev').disabled = i === 0;
+  $('b-next').disabled = i === TOUR.length - 1;
+}
+
+$('b-tour').addEventListener('click', () => { if (!busy) showTour(0); });
+$('b-next').addEventListener('click', () => { if (!busy && tourIndex < TOUR.length - 1) showTour(tourIndex + 1); });
+$('b-prev').addEventListener('click', () => { if (!busy && tourIndex > 0) showTour(tourIndex - 1); });
+
+function gb(v) {
+  return v >= 1024 ** 3 ? `${(v / 1024 ** 3).toFixed(1)} GB` : `${Math.round(v / 1024 ** 2)} MB`;
+}
+
+async function live() {
+  if (busy) return;
+  busy = true;
+  tourIndex = -1;
+  for (const id of ['b-prev', 'b-next', 'b-tour', 'b-live']) $(id).disabled = true;
+  for (const id of ['app-me', 'ld-me', 'adapter', 'gpu']) val(id, '');
+  const pause = Number(params.get('pause')) || 2600;
+
+  try {
+    focus(['app-me']);
+    caption('实况 · 1 / 4', '本页：有没有 WebGPU 入口',
+      '先看浏览器有没有 navigator.gpu。没有这个入口，下面几层都走不到。', "'gpu' in navigator");
+    await sleep(pause / 2);
+    if (!('gpu' in navigator)) {
+      val('app-me', '没有 navigator.gpu');
+      caption('实况 · 1 / 4', '到这里就停了', `这个浏览器没有 navigator.gpu（安全上下文：${isSecureContext}）。`);
+      return;
+    }
+    val('app-me', `navigator.gpu ✓ 安全上下文 ${isSecureContext ? '✓' : '✕'}`);
+    await sleep(pause);
+
+    focus(['adapter', 'native', 'driver', 'gpu'], ['k-a']);
+    caption('实况 · 2 / 4', '要一个适配器：往下一直连到 GPU',
+      'requestAdapter() 让浏览器挑一块可用的 GPU。拿到的 adapter 就代表“这块 GPU + 驱动”，limits 是它最多能给的。',
+      'const adapter = await navigator.gpu.requestAdapter();');
+    const adapter = await navigator.gpu.requestAdapter();
+    await sleep(pause / 2);
+    if (!adapter) {
+      val('adapter', 'null');
+      caption('实况 · 2 / 4', '返回了 null', '没拿到可用的适配器，而且不会报错。');
+      return;
+    }
+    const info = adapter.info || {};
+    val('gpu', `${info.vendor || '?'} / ${info.architecture || '?'}`);
+    val('adapter', `上限 maxBufferSize ${gb(adapter.limits.maxBufferSize)}`);
+    await sleep(pause);
+
+    focus(['ld-me', 'app-me'], ['k-1']);
+    caption('实况 · 3 / 4', '创建本页自己的逻辑设备',
+      'requestDevice() 给本页一个逻辑设备。没传 requiredLimits，拿到的是默认值，不是适配器的上限。',
+      'const device = await adapter.requestDevice();');
+    const device = await adapter.requestDevice();
+    await sleep(pause / 2);
+    val('ld-me', `实际 maxBufferSize ${gb(device.limits.maxBufferSize)}`);
+    await sleep(pause);
+
+    focus(['ld-me', 'ld-2', 'ld-3', 'adapter']);
+    caption('实况 · 4 / 4', '其他网页各有各的逻辑设备',
+      `同一块 GPU 被多个网页同时使用，每个网页各自隔离。本页的逻辑设备拿到 ${gb(device.limits.maxBufferSize)}，适配器上限是 ${gb(adapter.limits.maxBufferSize)}。（旁边两个“其他网页”是示意）`);
+    device.destroy();
+  } catch (e) {
+    caption('实况', '出错了', e.message);
+  } finally {
+    busy = false;
+    for (const id of ['b-tour', 'b-live']) $(id).disabled = false;
+  }
+}
+
+$('b-live').addEventListener('click', live);
+
+(async () => {
+  const play = params.get('play');
+  const step = Number(params.get('step')) || 3200;
+  if (play === 'tour') {
+    await sleep(800);
+    for (let i = 0; i < TOUR.length; i++) { showTour(i); await sleep(step); }
+  } else if (play === 'live') {
+    await sleep(800);
+    await live();
+  }
+})();
+</script>
+</body>
+</html>
