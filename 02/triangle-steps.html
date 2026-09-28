@@ -1,0 +1,386 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>02 · 三角形九步动画 | webgpu-lab</title>
+<link rel="icon" href="data:,">
+<style>
+  :root {
+    --bg: #f7f7f5; --fg: #1d1d1f; --muted: #6b6b70; --card: #ffffff; --line: #e3e3e0;
+    --ok: #1a7f37; --ok-bg: #e7f5ec; --bad: #c62828; --bad-bg: #fdecec; --run: #2f5bea; --run-bg: #eaf0ff;
+    --accent: #2f5bea; --code-bg: #f0f0ed;
+    --mono: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #121214; --fg: #e8e8ea; --muted: #9a9aa2; --card: #1b1b1f; --line: #2c2c32;
+      --ok: #4ac26b; --ok-bg: #16281c; --bad: #ff6b6b; --bad-bg: #2d1717; --run: #7b9bff; --run-bg: #1a2240;
+      --accent: #6f8fff; --code-bg: #232328;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg);
+    font: 15px/1.6 system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; }
+  main { max-width: 1040px; margin: 0 auto; padding: 24px 16px 48px; }
+  a { color: var(--accent); }
+  h1 { font-size: 1.4rem; margin: 8px 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 20px; }
+  code { font-family: var(--mono); font-size: .85rem; }
+
+  .cols { display: grid; grid-template-columns: 1fr 340px; gap: 16px; align-items: start; }
+  .panel { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin: 0 0 14px; }
+  .panel h3 { font-size: .95rem; margin: 0 0 10px; }
+
+  ol.steps { list-style: none; margin: 0; padding: 0; }
+  ol.steps li { border: 2px solid var(--line); border-radius: 10px; padding: 8px 12px; margin: 0 0 6px;
+    background: var(--card); transition: border-color .25s, background .25s; }
+  ol.steps li .hd { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: .92rem; }
+  ol.steps li .n { flex: none; width: 22px; height: 22px; border-radius: 50%; background: var(--line);
+    color: var(--fg); font-size: .78rem; display: grid; place-items: center; font-weight: 700; }
+  ol.steps li .api { font-family: var(--mono); font-size: .78rem; color: var(--muted); margin: 2px 0 0 30px; word-break: break-all; }
+  ol.steps li .why { font-size: .82rem; color: var(--muted); margin: 4px 0 0 30px; display: none; }
+  ol.steps li[data-state="done"] { border-color: var(--ok); }
+  ol.steps li[data-state="done"] .n { background: var(--ok); color: #fff; }
+  ol.steps li[data-state="cur"] { border-color: var(--run); background: var(--run-bg); }
+  ol.steps li[data-state="cur"] .n { background: var(--run); color: #fff; }
+  ol.steps li[data-state="cur"] .why { display: block; color: var(--fg); }
+
+  .buttons { display: flex; flex-wrap: wrap; gap: 8px; }
+  button { font: inherit; font-size: .88rem; border: 1px solid var(--accent); background: var(--accent); color: #fff;
+    border-radius: 8px; padding: 7px 12px; cursor: pointer; }
+  button.ghost { background: transparent; color: var(--accent); }
+  button:disabled { opacity: .35; cursor: not-allowed; }
+
+  .stage { display: grid; place-items: center; border-radius: 8px; padding: 10px;
+    background: repeating-conic-gradient(#d9d9d6 0% 25%, #eeeeeb 0% 50%) 50% / 16px 16px; }
+  @media (prefers-color-scheme: dark) {
+    .stage { background: repeating-conic-gradient(#26262b 0% 25%, #1e1e22 0% 50%) 50% / 16px 16px; }
+  }
+  canvas { width: 280px; height: 280px; display: block; border-radius: 4px; }
+  .verdict { font-size: .82rem; color: var(--muted); margin: 8px 0 0; }
+  .verdict b { color: var(--fg); }
+
+  .code { font-family: var(--mono); font-size: .8rem; background: var(--code-bg); border-radius: 8px;
+    padding: 8px 0; overflow-x: auto; }
+  .code div { padding: 1px 12px; white-space: pre; border-left: 3px solid transparent; color: var(--muted); }
+  .code div.hot { border-left-color: var(--run); background: var(--run-bg); color: var(--fg); }
+
+  #cmds, #log { font-family: var(--mono); font-size: .78rem; margin: 0; padding: 0; list-style: none; }
+  #cmds li, #log li { padding: 3px 0; border-top: 1px solid var(--line); word-break: break-all; }
+  #cmds li:first-child, #log li:first-child { border-top: 0; }
+  #cmds:empty::after, #log:empty::after { content: '（空）'; color: var(--muted); }
+  #log { max-height: 220px; overflow-y: auto; }
+  #log .bad { color: var(--bad); } #log .ok { color: var(--ok); }
+  .tag { display: inline-block; font-size: .72rem; border: 1px solid var(--line); border-radius: 4px;
+    padding: 0 5px; color: var(--muted); margin-left: 6px; }
+
+  @media (max-width: 860px) { .cols { grid-template-columns: 1fr; } canvas { width: 100%; height: auto; } }
+</style>
+</head>
+<body>
+<main>
+  <a href="./">← 02 实验索引</a>
+  <h1>第一个三角形：九步动画</h1>
+  <p class="sub">左边九步，每点一次就真实执行一次 WebGPU 调用。注意第 ⑤ 到 ⑧ 步画布一直是空的——
+  这几步只是在<b>录命令</b>，第 ⑨ 步提交之后三角形才出现。</p>
+
+  <div class="cols">
+    <div>
+      <section class="panel">
+        <div class="buttons">
+          <button id="next" type="button">下一步 ▸</button>
+          <button id="auto" type="button" class="ghost">自动播放</button>
+          <button id="clearonly" type="button" class="ghost" disabled>只提交 clear，不 draw</button>
+          <button id="reset" type="button" class="ghost">重来</button>
+        </div>
+        <p class="verdict" id="hint">先点「下一步」。</p>
+      </section>
+
+      <ol class="steps" id="steps"></ol>
+    </div>
+
+    <div>
+      <section class="panel">
+        <h3>画布<span class="tag" id="cvstate">未配置</span></h3>
+        <div class="stage"><canvas id="c" width="280" height="280"></canvas></div>
+        <p class="verdict">灰白格子是网页背景。画布默认是<b>透明黑</b>，提交之前什么都没有。</p>
+      </section>
+
+      <section class="panel">
+        <h3>这一帧录到的命令</h3>
+        <ul id="cmds"></ul>
+      </section>
+
+      <section class="panel">
+        <h3>真实返回值</h3>
+        <ul id="log"></ul>
+      </section>
+    </div>
+  </div>
+
+  <section class="panel">
+    <h3>对应代码</h3>
+    <div class="code" id="code"></div>
+  </section>
+
+  <section class="panel">
+    <h3>为什么 ⑤~⑨ 每次点击都会重放</h3>
+    <p style="font-size:.86rem;color:var(--muted);margin:0">
+      <code>getCurrentTexture()</code> 拿到的纹理只在<b>当前帧</b>有效。规范里
+      「Expire the current texture」这一步会对它调用 <code>destroy()</code>，
+      所以慢慢点按钮（跨了很多帧）之后再提交，用的就是一张已经销毁的纹理。
+      这个页面的做法是：点 ⑤~⑨ 里的任一步，都在<b>同一个 requestAnimationFrame 里</b>
+      从 ⑤ 重放到当前步——录命令本身不改画布，只有 ⑨ 的 submit 会。
+    </p>
+  </section>
+</main>
+
+<script type="module">
+const $ = (s, r = document) => r.querySelector(s);
+const canvas = $('#c');
+const logEl = $('#log'), cmdsEl = $('#cmds'), hintEl = $('#hint'), cvstate = $('#cvstate');
+
+const log = (s, cls = '') => {
+  const li = document.createElement('li');
+  li.className = cls; li.textContent = s;
+  logEl.append(li); logEl.scrollTop = logEl.scrollHeight;
+};
+const cmd = (s) => { const li = document.createElement('li'); li.textContent = s; cmdsEl.append(li); };
+
+const WGSL = [
+  '@vertex fn vs(@builtin(vertex_index) i : u32) -> @builtin(position) vec4f {',
+  '  let p = array<vec2f, 3>(vec2f(0.0, 0.5), vec2f(-0.5, -0.5), vec2f(0.5, -0.5));',
+  '  return vec4f(p[i], 0.0, 1.0);',
+  '}',
+  '@fragment fn fs() -> @location(0) vec4f {',
+  '  return vec4f(1.0, 0.45, 0.2, 1.0);',
+  '}',
+].join('\n');
+
+const CODE = [
+  'const adapter = await navigator.gpu.requestAdapter();',
+  'const device  = await adapter.requestDevice();',
+  '',
+  "const context = canvas.getContext('webgpu');",
+  'const format  = navigator.gpu.getPreferredCanvasFormat();',
+  'context.configure({ device, format });',
+  '',
+  'const shader = device.createShaderModule({ code: `',
+  '  @vertex fn vs(@builtin(vertex_index) i : u32) -> @builtin(position) vec4f {',
+  '    let p = array<vec2f, 3>(vec2f(0.0, 0.5), vec2f(-0.5, -0.5), vec2f(0.5, -0.5));',
+  '    return vec4f(p[i], 0.0, 1.0);',
+  '  }',
+  '  @fragment fn fs() -> @location(0) vec4f {',
+  '    return vec4f(1.0, 0.45, 0.2, 1.0);',
+  '  }',
+  '`});',
+  '',
+  'const pipeline = device.createRenderPipeline({',
+  "  layout: 'auto',",
+  "  vertex:   { module: shader, entryPoint: 'vs' },",
+  "  fragment: { module: shader, entryPoint: 'fs', targets: [{ format }] },",
+  '});',
+  '',
+  'const view = context.getCurrentTexture().createView();',
+  'const encoder = device.createCommandEncoder();',
+  'const pass = encoder.beginRenderPass({',
+  '  colorAttachments: [{',
+  '    view,',
+  '    clearValue: { r: 0.07, g: 0.07, b: 0.09, a: 1 },',
+  "    loadOp: 'clear',",
+  "    storeOp: 'store',",
+  '  }],',
+  '});',
+  'pass.setPipeline(pipeline);',
+  'pass.draw(3);',
+  'pass.end();',
+  'device.queue.submit([encoder.finish()]);',
+];
+
+const STEPS = [
+  { t: '拿到 device', api: 'requestAdapter() → requestDevice()', lines: [1, 2],
+    why: '第 1 篇那两行。device 是后面所有对象的工厂：着色器、管线、命令编码器都从它出来。' },
+  { t: '配置画布', api: "canvas.getContext('webgpu') + configure({ device, format })", lines: [4, 6],
+    why: '画布本身不认识 GPU。configure 才把这块画布和这个 device 绑起来，并约定像素格式。' },
+  { t: '编译着色器', api: 'device.createShaderModule({ code })', lines: [8, 16],
+    why: 'WGSL 源码交给 GPU 编译。三个顶点坐标直接写在着色器里，顶点缓冲区留到第 4 篇。' },
+  { t: '组装渲染管线', api: 'device.createRenderPipeline({ vertex, fragment, layout })', lines: [18, 22],
+    why: '管线把「用哪个顶点函数、哪个片元函数、输出什么格式」一次性固定下来，之后每帧复用。' },
+  { t: '取这一帧的画布纹理', api: 'context.getCurrentTexture().createView()', lines: [24, 24],
+    why: '要画到哪张图上。这张纹理只属于当前帧，下一帧就被 destroy 了。' },
+  { t: '开一个命令编码器', api: 'device.createCommandEncoder()', lines: [25, 25],
+    why: '从这里开始录命令。注意是录，不是执行——GPU 这会儿还不知道有这回事。' },
+  { t: '开始渲染通道', api: 'encoder.beginRenderPass({ colorAttachments })', lines: [26, 33],
+    why: 'loadOp: clear 表示进通道先用 clearValue 涂一遍底色，storeOp: store 表示画完要留下。画布仍然没变。' },
+  { t: '录命令：用哪条管线、画几个顶点', api: 'pass.setPipeline() / pass.draw(3)', lines: [34, 35],
+    why: 'draw(3) 的意思是顶点着色器跑 3 次，vertex_index 依次是 0、1、2。画布还是没变。' },
+  { t: '收尾并提交', api: 'pass.end() → encoder.finish() → device.queue.submit()', lines: [36, 37],
+    why: 'finish() 把录好的命令封成命令缓冲区，submit() 才真正丢给 GPU 队列。三角形是在这一步出现的。' },
+];
+
+const codeEl = $('#code');
+CODE.forEach((line, i) => {
+  const d = document.createElement('div');
+  d.textContent = line === '' ? ' ' : line;
+  d.dataset.n = String(i + 1);
+  codeEl.append(d);
+});
+
+const stepsEl = $('#steps');
+STEPS.forEach((s, i) => {
+  const li = document.createElement('li');
+  li.dataset.state = 'todo';
+  li.innerHTML = '<div class="hd"><span class="n"></span><span class="t"></span></div>'
+    + '<div class="api"></div><div class="why"></div>';
+  li.querySelector('.n').textContent = String(i + 1);
+  li.querySelector('.t').textContent = s.t;
+  li.querySelector('.api').textContent = s.api;
+  li.querySelector('.why').textContent = s.why;
+  stepsEl.append(li);
+});
+
+const gpu = { adapter: null, device: null, context: null, format: null, shader: null, pipeline: null };
+let step = 0, autoTimer = null, busy = false;
+
+function paintUI() {
+  [...stepsEl.children].forEach((li, i) => {
+    li.dataset.state = i + 1 < step ? 'done' : i + 1 === step ? 'cur' : 'todo';
+  });
+  const cur = STEPS[step - 1];
+  [...codeEl.children].forEach((d) => {
+    const n = Number(d.dataset.n);
+    d.classList.toggle('hot', !!cur && n >= cur.lines[0] && n <= cur.lines[1]);
+  });
+  $('#next').disabled = busy || step >= STEPS.length;
+  $('#clearonly').disabled = busy || !gpu.pipeline;
+}
+
+// ⑤~⑨ 必须在同一帧里跑完：getCurrentTexture() 拿到的纹理下一帧就被 destroy。
+function replayFrame(upto, { skipDraw = false } = {}) {
+  return new Promise((resolve) => requestAnimationFrame(() => {
+    cmdsEl.replaceChildren();
+    const tex = gpu.context.getCurrentTexture();
+    const view = tex.createView();
+    if (upto === 5) log('⑤ 纹理 ' + tex.width + '×' + tex.height + ' ' + tex.format, 'ok');
+    if (upto < 6) return resolve();
+
+    const encoder = gpu.device.createCommandEncoder();
+    if (upto === 6) log('⑥ 命令编码器已就绪，GPU 尚未收到任何东西', 'ok');
+    if (upto < 7) return resolve();
+
+    const pass = encoder.beginRenderPass({
+      colorAttachments: [{
+        view,
+        clearValue: { r: 0.07, g: 0.07, b: 0.09, a: 1 },
+        loadOp: 'clear',
+        storeOp: 'store',
+      }],
+    });
+    cmd('clear → rgba(0.07, 0.07, 0.09, 1)');
+    if (upto === 7) log('⑦ 渲染通道已打开，clear 只是录进去的一条命令', 'ok');
+
+    if (upto >= 8 && !skipDraw) {
+      pass.setPipeline(gpu.pipeline);
+      pass.draw(3);
+      cmd('setPipeline(pipeline)');
+      cmd('draw(3) → vertex_index = 0, 1, 2');
+      if (upto === 8) log('⑧ draw(3) 录好了。画布没变，因为还没提交', 'ok');
+    }
+
+    pass.end();
+    if (upto < 9) return resolve();
+
+    cmd('end()');
+    const buffer = encoder.finish();
+    cmd('finish() → GPUCommandBuffer');
+    gpu.device.pushErrorScope('validation');
+    gpu.device.queue.submit([buffer]);
+    cmd('queue.submit([buffer])');
+    gpu.device.popErrorScope().then((err) => {
+      if (err) log('⑨ submit 报错：' + err.message, 'bad');
+      else log(skipDraw ? '⑨ 已提交：只有 clear，画布是纯底色' : '⑨ 已提交：三角形出现了', 'ok');
+      resolve();
+    });
+  }));
+}
+
+async function doStep(n) {
+  if (n === 1) {
+    if (!navigator.gpu) { log('没有 navigator.gpu，这个浏览器用不了 WebGPU', 'bad'); return false; }
+    gpu.adapter = await navigator.gpu.requestAdapter();
+    if (!gpu.adapter) { log('requestAdapter() 返回 null：没拿到可用的适配器', 'bad'); return false; }
+    gpu.device = await gpu.adapter.requestDevice();
+    gpu.device.addEventListener('uncapturederror', (e) => log('未捕获错误：' + e.error.message, 'bad'));
+    log('① adapter: ' + (gpu.adapter.info.vendor || '(未上报)') + ' / '
+      + (gpu.adapter.info.architecture || '(未上报)'), 'ok');
+    log('① device 已就绪', 'ok');
+  } else if (n === 2) {
+    gpu.context = canvas.getContext('webgpu');
+    gpu.format = navigator.gpu.getPreferredCanvasFormat();
+    gpu.context.configure({ device: gpu.device, format: gpu.format });
+    cvstate.textContent = '已配置 ' + gpu.format;
+    log('② 首选画布格式: ' + gpu.format, 'ok');
+  } else if (n === 3) {
+    gpu.shader = gpu.device.createShaderModule({ code: WGSL });
+    const info = await gpu.shader.getCompilationInfo();
+    const bad = info.messages.filter((m) => m.type === 'error');
+    log('③ 编译信息 ' + info.messages.length + ' 条' + (bad.length ? '（有错误）' : '（无错误）'),
+      bad.length ? 'bad' : 'ok');
+    bad.forEach((m) => log('  ' + m.lineNum + ':' + m.linePos + ' ' + m.message, 'bad'));
+  } else if (n === 4) {
+    gpu.device.pushErrorScope('validation');
+    gpu.pipeline = gpu.device.createRenderPipeline({
+      layout: 'auto',
+      vertex: { module: gpu.shader, entryPoint: 'vs' },
+      fragment: { module: gpu.shader, entryPoint: 'fs', targets: [{ format: gpu.format }] },
+    });
+    const err = await gpu.device.popErrorScope();
+    log(err ? '④ 管线创建失败：' + err.message
+      : '④ 管线已创建（primitive 全省略 → triangle-list / frontFace ccw / cullMode none）',
+      err ? 'bad' : 'ok');
+  } else {
+    await replayFrame(n);
+  }
+  return true;
+}
+
+$('#next').addEventListener('click', async () => {
+  if (busy || step >= STEPS.length) return;
+  busy = true; paintUI();
+  const n = step + 1;
+  const ok = await doStep(n);
+  if (ok) step = n;
+  hintEl.textContent = n <= 4 ? '这一步创建的对象可以跨帧复用。'
+    : n < 9 ? '画布仍然没变——这几步只是在录命令。'
+    : '提交完成。想看「只 clear 不 draw」的样子，点上面那个按钮。';
+  busy = false; paintUI();
+});
+
+$('#clearonly').addEventListener('click', async () => {
+  if (busy) return;
+  busy = true; paintUI();
+  await replayFrame(9, { skipDraw: true });
+  hintEl.textContent = '这一帧跳过了 draw(3)，只剩 clear 的底色——底色是渲染通道给的，不是三角形给的。';
+  busy = false; paintUI();
+});
+
+$('#auto').addEventListener('click', () => {
+  if (autoTimer) {
+    clearInterval(autoTimer); autoTimer = null; $('#auto').textContent = '自动播放'; return;
+  }
+  $('#auto').textContent = '暂停';
+  autoTimer = setInterval(() => {
+    if (step >= STEPS.length) {
+      clearInterval(autoTimer); autoTimer = null; $('#auto').textContent = '自动播放'; return;
+    }
+    if (!busy) $('#next').click();
+  }, 1200);
+});
+
+$('#reset').addEventListener('click', () => location.reload());
+
+paintUI();
+</script>
+</body>
+</html>

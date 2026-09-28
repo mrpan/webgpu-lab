@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>02 · 三角形与三种着色器 | webgpu-lab</title>
+<link rel="icon" href="data:,">
+<style>
+  :root { --bg: #f7f7f5; --fg: #1d1d1f; --muted: #6b6b70; --card: #ffffff; --line: #e3e3e0; --accent: #2f5bea; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #121214; --fg: #e8e8ea; --muted: #9a9aa2; --card: #1b1b1f; --line: #2c2c32; --accent: #6f8fff; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg);
+    font: 15px/1.6 system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 24px 16px 48px; }
+  a { color: var(--accent); }
+  h1 { font-size: 1.4rem; margin: 8px 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 20px; }
+  ol { list-style: none; padding: 0; margin: 0; }
+  li { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin: 0 0 12px; }
+  li p { margin: 4px 0 0; color: var(--muted); font-size: .9rem; }
+</style>
+</head>
+<body>
+<main>
+  <a href="../">← 系列索引</a>
+  <h1>02 · 三角形与三种着色器</h1>
+  <p class="sub">AI学WebGPU②：三角形里的三种着色器</p>
+  <ol>
+    <li>
+      <a href="triangle-anatomy.html"><strong>三角形解剖</strong></a>
+      <p>四段动画：顶点函数跑三次、NDC 与帧缓冲的 Y 方向相反、绕序与剔除、粗网格覆盖计数（示意，不是片段调用次数）。</p>
+    </li>
+    <li>
+      <a href="three-shaders.html"><strong>三种着色器</strong></a>
+      <p>本篇主页面：计算着色器算出三个顶点写进 storage buffer，顶点着色器读出来，片段着色器上色；可切常量色与按位置渐变，拖 scale 重跑计算。</p>
+    </li>
+    <li>
+      <a href="triangle-steps.html"><strong>九步步进器</strong></a>
+      <p>每点一步执行一次真实调用。第 ⑤～⑧ 步画布仍是空的，直到 ⑨ submit 之后三角形才出现。</p>
+    </li>
+    <li>
+      <a href="triangle-min.html"><strong>最小三角形</strong></a>
+      <p>文章正文里的那份代码：顶点加片段两段着色器，画一个橙色三角形。改坐标和颜色都在这里试。</p>
+    </li>
+  </ol>
+</main>
+</body>
+</html>

@@ -1,0 +1,506 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>02 · 三角形解剖：顶点、坐标、剔除、光栅化 | webgpu-lab</title>
+<link rel="icon" href="data:,">
+<style>
+  :root {
+    --bg: #f7f7f5; --fg: #1d1d1f; --muted: #6b6b70; --card: #ffffff; --line: #e3e3e0;
+    --ok: #1a7f37; --ok-bg: #e7f5ec; --bad: #c62828; --bad-bg: #fdecec; --run: #2f5bea; --run-bg: #eaf0ff;
+    --accent: #2f5bea; --code-bg: #f0f0ed; --tri: #ff7433; --grid: #d7d7d3;
+    --mono: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #121214; --fg: #e8e8ea; --muted: #9a9aa2; --card: #1b1b1f; --line: #2c2c32;
+      --ok: #4ac26b; --ok-bg: #16281c; --bad: #ff6b6b; --bad-bg: #2d1717; --run: #7b9bff; --run-bg: #1a2240;
+      --accent: #6f8fff; --code-bg: #232328; --grid: #35353c;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg);
+    font: 15px/1.6 system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; }
+  main { max-width: 1000px; margin: 0 auto; padding: 24px 16px 48px; }
+  a { color: var(--accent); }
+  h1 { font-size: 1.4rem; margin: 8px 0 4px; }
+  h2 { font-size: 1.05rem; margin: 0 0 10px; }
+  .sub { color: var(--muted); margin: 0 0 20px; }
+  code { font-family: var(--mono); font-size: .85rem; }
+  .panel { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin: 0 0 16px; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+  .note { font-size: .84rem; color: var(--muted); margin: 10px 0 0; }
+  .note b { color: var(--fg); }
+  button { font: inherit; font-size: .88rem; border: 1px solid var(--accent); background: var(--accent); color: #fff;
+    border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+  button.ghost { background: transparent; color: var(--accent); }
+  button:disabled { opacity: .35; cursor: not-allowed; }
+  .buttons { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; }
+  svg { width: 100%; height: auto; display: block; }
+  .axis { stroke: var(--muted); stroke-width: 1; }
+  .gridline { stroke: var(--grid); stroke-width: 1; }
+  .tri { fill: rgba(255, 116, 51, .22); stroke: var(--tri); stroke-width: 2; }
+  .vtx { fill: var(--card); stroke: var(--tri); stroke-width: 2; }
+  .vtx.on { fill: var(--tri); }
+  .lbl { font: 11px var(--mono); fill: var(--muted); }
+  .lbl.on { fill: var(--fg); font-weight: 700; }
+  table { border-collapse: collapse; width: 100%; font-size: .82rem; }
+  th, td { border: 1px solid var(--line); padding: 4px 8px; text-align: left; font-family: var(--mono); }
+  th { color: var(--muted); font-weight: 600; }
+  td.hot, tr.hot td { background: var(--run-bg); }
+  .ctl { display: flex; flex-wrap: wrap; gap: 14px; margin: 0 0 12px; font-size: .86rem; }
+  .ctl label { display: flex; align-items: center; gap: 6px; }
+  select { font: inherit; font-size: .84rem; padding: 3px 6px; border-radius: 6px;
+    border: 1px solid var(--line); background: var(--card); color: var(--fg); }
+  .formula { font-family: var(--mono); font-size: .8rem; background: var(--code-bg);
+    border-radius: 8px; padding: 10px 12px; overflow-x: auto; white-space: pre-wrap; margin: 0 0 10px; }
+  .badge { display: inline-block; font-size: .8rem; border-radius: 6px; padding: 2px 8px; font-weight: 700; }
+  .badge.ok { background: var(--ok-bg); color: var(--ok); }
+  .badge.bad { background: var(--bad-bg); color: var(--bad); }
+  .stage { display: grid; place-items: center; border-radius: 8px; padding: 8px;
+    background: repeating-conic-gradient(#d9d9d6 0% 25%, #eeeeeb 0% 50%) 50% / 14px 14px; }
+  @media (prefers-color-scheme: dark) {
+    .stage { background: repeating-conic-gradient(#26262b 0% 25%, #1e1e22 0% 50%) 50% / 14px 14px; }
+  }
+  canvas { display: block; border-radius: 4px; width: 100%; max-width: 240px; height: auto; }
+  @media (max-width: 800px) { .two { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<main>
+  <a href="./">← 02 实验索引</a>
+  <h1>三角形解剖</h1>
+  <p class="sub">四段动画，拆的是 <code>draw(3)</code> 这一行背后发生的事：顶点函数跑了几次、坐标被怎么换、
+  哪些设置会让三角形消失，以及光栅化如何确定覆盖区域。顶点、坐标与粗网格扫描是 JavaScript 示意动画；剔除实验使用真实 WebGPU 渲染。</p>
+
+  <!-- ① 顶点着色器跑三次 -->
+  <section class="panel">
+    <h2>① draw(3)：顶点函数跑三次</h2>
+    <div class="two">
+      <div>
+        <svg id="ndc1" viewBox="0 0 260 260" role="img" aria-label="NDC 坐标系里的三个顶点"></svg>
+      </div>
+      <div>
+        <div class="buttons">
+          <button id="v-step" type="button">跑下一个顶点 ▸</button>
+          <button id="v-reset" type="button" class="ghost">重来</button>
+        </div>
+        <div class="formula">@vertex fn vs(@builtin(vertex_index) i : u32)
+        -&gt; @builtin(position) vec4f {
+  let p = array&lt;vec2f, 3&gt;(
+    vec2f( 0.0,  0.5),
+    vec2f(-0.5, -0.5),
+    vec2f( 0.5, -0.5));
+  return vec4f(p[i], 0.0, 1.0);
+}</div>
+        <table>
+          <thead><tr><th>vertex_index</th><th>返回的 vec4f</th></tr></thead>
+          <tbody id="v-rows"></tbody>
+        </table>
+        <p class="note">同一个函数被调用三次，唯一的区别是 <code>vertex_index</code>。
+        这里逐次点亮是为了讲解，不代表 GPU 逐次执行；三个调用没有先后依赖。</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ② 两套坐标 -->
+  <section class="panel">
+    <h2>② 同一个点，两套坐标：Y 朝上还是朝下</h2>
+    <div class="two">
+      <div>
+        <svg id="ndc2" viewBox="0 0 260 275" role="img" aria-label="NDC 坐标系"></svg>
+      </div>
+      <div>
+        <svg id="fb2" viewBox="0 0 260 275" role="img" aria-label="帧缓冲坐标系"></svg>
+      </div>
+    </div>
+    <div class="buttons" style="margin-top:12px">
+      <button id="m-step" type="button">映射下一个顶点 ▸</button>
+      <button id="m-reset" type="button" class="ghost">重来</button>
+    </div>
+    <div class="formula" id="m-formula">规范里的视口变换（画布按 280×280 算）：
+framebufferCoords(n) = (0.5 × (n.x + 1) × width,  0.5 × (−n.y + 1) × height)</div>
+    <table>
+      <thead><tr><th>顶点</th><th>NDC (x, y)</th><th>帧缓冲 (x, y)</th></tr></thead>
+      <tbody id="m-rows"></tbody>
+    </table>
+    <p class="note">两张图里三角形的<b>位置一模一样</b>，变的只是编号方式：NDC 原点在正中、Y 朝上、范围 −1~1；
+    帧缓冲原点在左上、Y 朝下、单位是像素。公式里那个 <code>−n.y</code> 就是翻转。</p>
+  </section>
+
+  <!-- ③ 正面还是背面 -->
+  <section class="panel">
+    <h2>③ 顺序写反了，三角形会不会消失</h2>
+    <div class="ctl">
+      <label>顶点顺序
+        <select id="c-order">
+          <option value="normal">上 → 左下 → 右下（原来的）</option>
+          <option value="reversed">上 → 右下 → 左下（反过来）</option>
+        </select>
+      </label>
+      <label>frontFace
+        <select id="c-front"><option value="ccw">ccw（默认）</option><option value="cw">cw</option></select>
+      </label>
+      <label>cullMode
+        <select id="c-cull">
+          <option value="none">none（默认）</option>
+          <option value="back">back</option>
+          <option value="front">front</option>
+        </select>
+      </label>
+    </div>
+    <div class="two">
+      <div>
+        <div class="formula" id="c-formula"></div>
+        <p class="note" id="c-verdict"></p>
+      </div>
+      <div>
+        <div class="stage"><canvas id="c-canvas" width="240" height="240"></canvas></div>
+        <p class="note" id="c-measure">实测：等 WebGPU 初始化……</p>
+      </div>
+    </div>
+    <p class="note">左边是按规范的面积公式算出来的<b>判定</b>，右边是同样配置下<b>真跑一遍</b>的结果，
+    还顺带把画出来的像素数数了一遍（渲染到一张 64×64 的离屏纹理，拷回内存数非透明像素）。
+    两边对不上，就是我的理解错了。</p>
+  </section>
+
+  <!-- ④ 光栅化 -->
+  <section class="panel">
+    <h2>④ 光栅化示意：三角形覆盖哪些格子</h2>
+    <div class="two">
+      <div>
+        <canvas id="rast" width="280" height="280" style="max-width:280px;background:var(--code-bg)"></canvas>
+      </div>
+      <div>
+        <div class="buttons">
+          <button id="r-play" type="button">开始扫描 ▸</button>
+          <button id="r-reset" type="button" class="ghost">重来</button>
+        </div>
+        <div class="formula">@fragment fn fs() -&gt; @location(0) vec4f {
+  return vec4f(1.0, 0.45, 0.2, 1.0);
+}</div>
+        <p class="note">这里用 JavaScript 检查哪些格子的中心落在三角形内。
+        计数器：<b id="r-count">0</b> 个覆盖格子（28×28 粗网格）。这不是 GPU 片段调用次数的实测，也不能按画布尺寸直接推算调用次数。</p>
+        <p class="note">这里的片段函数每次返回相同的颜色，所以是纯色。换成按 <code>@builtin(position)</code> 计算颜色，就能得到位置渐变；下一篇再看顶点颜色的插值。</p>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script type="module">
+const $ = (s, r = document) => r.querySelector(s);
+const SIZE = 260, PAD = 10, W = SIZE - PAD * 2;  // 绘图区 240
+const FB = 280;                                   // 假想画布 280×280
+
+const ORDERS = {
+  normal:   [[0, 0.5], [-0.5, -0.5], [0.5, -0.5]],
+  reversed: [[0, 0.5], [0.5, -0.5], [-0.5, -0.5]],
+};
+const NAMES = ['上', '左下', '右下'];
+
+const toSvg = ([x, y]) => [PAD + (x + 1) / 2 * W, PAD + (1 - y) / 2 * W];
+const toFb = ([x, y]) => [0.5 * (x + 1) * FB, 0.5 * (-y + 1) * FB];
+
+function gridSvg(el, { yDown, originLabel }) {
+  const parts = [];
+  for (let i = 0; i <= 8; i++) {
+    const p = PAD + (i / 8) * W;
+    parts.push(`<line class="gridline" x1="${p}" y1="${PAD}" x2="${p}" y2="${PAD + W}"/>`);
+    parts.push(`<line class="gridline" x1="${PAD}" y1="${p}" x2="${PAD + W}" y2="${p}"/>`);
+  }
+  if (yDown) {
+    parts.push(`<line class="axis" x1="${PAD}" y1="${PAD}" x2="${PAD + W}" y2="${PAD}"/>`);
+    parts.push(`<line class="axis" x1="${PAD}" y1="${PAD}" x2="${PAD}" y2="${PAD + W}"/>`);
+    parts.push(`<text class="lbl" x="${PAD + 4}" y="${PAD + 14}">${originLabel}</text>`);
+    parts.push(`<text class="lbl" x="${PAD + W - 34}" y="${PAD + 14}">x →</text>`);
+    parts.push(`<text class="lbl" x="${PAD + 4}" y="${PAD + W - 6}">y ↓</text>`);
+  } else {
+    const mid = PAD + W / 2;
+    parts.push(`<line class="axis" x1="${PAD}" y1="${mid}" x2="${PAD + W}" y2="${mid}"/>`);
+    parts.push(`<line class="axis" x1="${mid}" y1="${PAD}" x2="${mid}" y2="${PAD + W}"/>`);
+    parts.push(`<text class="lbl" x="${mid + 4}" y="${mid + 14}">${originLabel}</text>`);
+    parts.push(`<text class="lbl" x="${PAD + W - 34}" y="${mid - 6}">x →</text>`);
+    parts.push(`<text class="lbl" x="${mid + 6}" y="${PAD + 12}">y ↑</text>`);
+  }
+  el.innerHTML = parts.join('');
+}
+
+function drawTri(el, pts, { shown = 3, labels = [] } = {}) {
+  const svgPts = pts.map(toSvg);
+  const parts = [];
+  if (shown < 3) {  // 还没走完时，先用虚线把目标位置标出来
+    parts.push(`<polygon points="${svgPts.map((p) => p.join(',')).join(' ')}"
+      fill="none" stroke="var(--grid)" stroke-width="1.5" stroke-dasharray="4 4"/>`);
+  }
+  if (shown >= 3) {
+    parts.push(`<polygon class="tri" points="${svgPts.map((p) => p.join(',')).join(' ')}"/>`);
+  } else if (shown === 2) {
+    parts.push(`<line stroke="var(--tri)" stroke-width="2" x1="${svgPts[0][0]}" y1="${svgPts[0][1]}"
+      x2="${svgPts[1][0]}" y2="${svgPts[1][1]}"/>`);
+  }
+  svgPts.forEach((p, i) => {
+    if (i >= shown) return;
+    parts.push(`<circle class="vtx${i === shown - 1 ? ' on' : ''}" cx="${p[0]}" cy="${p[1]}" r="6"/>`);
+    const t = labels[i] ?? `i=${i}`;
+    const dy = pts[i][1] > 0 ? -12 : 20;
+    parts.push(`<text class="lbl${i === shown - 1 ? ' on' : ''}" x="${p[0] - 18}" y="${p[1] + dy}">${t}</text>`);
+  });
+  el.insertAdjacentHTML('beforeend', parts.join(''));
+}
+
+/* ① 顶点函数跑三次 */
+const ndc1 = $('#ndc1');
+let vShown = 0;
+function renderV() {
+  gridSvg(ndc1, { yDown: false, originLabel: '(0,0)' });
+  const pts = ORDERS.normal;
+  drawTri(ndc1, pts, { shown: vShown, labels: pts.map((_, i) => `i=${i}`) });
+  $('#v-rows').replaceChildren(...pts.slice(0, vShown).map((p, i) => {
+    const tr = document.createElement('tr');
+    if (i === vShown - 1) tr.className = 'hot';
+    tr.innerHTML = `<td>${i}</td><td>vec4f(${p[0].toFixed(1)}, ${p[1].toFixed(1)}, 0.0, 1.0)</td>`;
+    return tr;
+  }));
+  $('#v-step').disabled = vShown >= 3;
+}
+$('#v-step').addEventListener('click', () => { vShown = Math.min(3, vShown + 1); renderV(); });
+$('#v-reset').addEventListener('click', () => { vShown = 0; renderV(); });
+renderV();
+
+/* ② 两套坐标 */
+let mShown = 0;
+function renderM() {
+  const pts = ORDERS.normal;
+  gridSvg($('#ndc2'), { yDown: false, originLabel: 'NDC (0,0)' });
+  gridSvg($('#fb2'), { yDown: true, originLabel: '帧缓冲 (0,0)' });
+  drawTri($('#ndc2'), pts, { shown: mShown, labels: pts.map((p) => `(${p[0]}, ${p[1]})`) });
+  drawTri($('#fb2'), pts, { shown: mShown, labels: pts.map((p) => toFb(p).map((v) => v.toFixed(0)).join(', ')) });
+  $('#ndc2').insertAdjacentHTML('beforeend',
+    `<text class="lbl" x="${PAD}" y="${SIZE + 8}">NDC：原点在中间，y 朝上，范围 −1 ~ 1</text>`);
+  $('#fb2').insertAdjacentHTML('beforeend',
+    `<text class="lbl" x="${PAD}" y="${SIZE + 8}">帧缓冲：原点在左上，y 朝下，单位是像素</text>`);
+  $('#m-rows').replaceChildren(...pts.slice(0, mShown).map((p, i) => {
+    const f = toFb(p);
+    const tr = document.createElement('tr');
+    if (i === mShown - 1) tr.className = 'hot';
+    tr.innerHTML = `<td>${NAMES[i]}</td><td>(${p[0].toFixed(1)}, ${p[1].toFixed(1)})</td>`
+      + `<td>(${f[0].toFixed(0)}, ${f[1].toFixed(0)})</td>`;
+    return tr;
+  }));
+  $('#m-step').disabled = mShown >= 3;
+}
+$('#m-step').addEventListener('click', () => { mShown = Math.min(3, mShown + 1); renderM(); });
+$('#m-reset').addEventListener('click', () => { mShown = 0; renderM(); });
+renderM();
+
+/* ③ 正面 / 背面：规范公式 + 真实渲染 */
+// 规范 area = 0.5 × ((v1.x·vn.y − vn.x·v1.y) + Σ(v(i+1).x·v(i).y − v(i).x·v(i+1).y))
+function specArea(fb) {
+  const n = fb.length;
+  const terms = [];
+  terms.push({ a: fb[0][0] * fb[n - 1][1], b: fb[n - 1][0] * fb[0][1], i: `v1.x·v${n}.y − v${n}.x·v1.y` });
+  for (let i = 0; i < n - 1; i++) {
+    terms.push({ a: fb[i + 1][0] * fb[i][1], b: fb[i][0] * fb[i + 1][1], i: `v${i + 2}.x·v${i + 1}.y − v${i + 1}.x·v${i + 2}.y` });
+  }
+  const sum = terms.reduce((s, t) => s + t.a - t.b, 0);
+  return { area: 0.5 * sum, terms };
+}
+
+function verdictOf(order, frontFace, cullMode) {
+  const fb = ORDERS[order].map(toFb);
+  const { area, terms } = specArea(fb);
+  const isFront = frontFace === 'ccw' ? area > 0 : area < 0;
+  const culled = (cullMode === 'back' && !isFront) || (cullMode === 'front' && isFront);
+  return { area, terms, isFront, culled, fb };
+}
+
+function paintVerdict() {
+  const order = $('#c-order').value, frontFace = $('#c-front').value, cullMode = $('#c-cull').value;
+  const { area, terms, isFront, culled } = verdictOf(order, frontFace, cullMode);
+  $('#c-formula').textContent =
+    '帧缓冲坐标（按 280×280 画布算；换个尺寸只是等比缩放，area 的符号不变）：\n'
+    + ORDERS[order].map((p, i) => `  v${i + 1} = (${toFb(p).map((v) => v.toFixed(0)).join(', ')})`).join('\n')
+    + '\n\narea = 0.5 × ('
+    + terms.map((t, i) => {
+      const v = t.a - t.b;
+      const sign = v < 0 ? '−' : i === 0 ? '' : '+';
+      return (i === 0 ? sign : ' ' + sign + ' ') + Math.abs(v).toFixed(0);
+    }).join('') + ')'
+    + '\n     = ' + area.toFixed(0);
+  $('#c-verdict').innerHTML =
+    `area ${area > 0 ? '&gt; 0' : '&lt; 0'}，frontFace 是 <code>${frontFace}</code> → 这个三角形是`
+    + `<b>${isFront ? '正面' : '背面'}</b>；cullMode 是 <code>${cullMode}</code> → `
+    + `<span class="badge ${culled ? 'bad' : 'ok'}">${culled ? '判定：被剔掉' : '判定：画得出来'}</span>`;
+}
+
+const gpu = { device: null, context: null, format: null, pipelines: new Map(), off: null, buf: null };
+
+function wgslFor(order) {
+  const pts = ORDERS[order].map(([x, y]) => `vec2f(${x.toFixed(1)}, ${y.toFixed(1)})`).join(', ');
+  return `
+@vertex fn vs(@builtin(vertex_index) i : u32) -> @builtin(position) vec4f {
+  let p = array<vec2f, 3>(${pts});
+  return vec4f(p[i], 0.0, 1.0);
+}
+@fragment fn fs() -> @location(0) vec4f {
+  return vec4f(1.0, 0.45, 0.2, 1.0);
+}`;
+}
+
+function pipelineFor(order, frontFace, cullMode, format) {
+  const key = [order, frontFace, cullMode, format].join('|');
+  if (!gpu.pipelines.has(key)) {
+    const module = gpu.device.createShaderModule({ code: wgslFor(order) });
+    gpu.pipelines.set(key, gpu.device.createRenderPipeline({
+      layout: 'auto',
+      vertex: { module, entryPoint: 'vs' },
+      fragment: { module, entryPoint: 'fs', targets: [{ format }] },
+      primitive: { topology: 'triangle-list', frontFace, cullMode },
+    }));
+  }
+  return gpu.pipelines.get(key);
+}
+
+// 连续改两三个下拉框时，映射缓冲区还没解映射就会被再次使用。
+// 所以这里不丢弃后来的请求，而是排队重跑一次，保证面板上的数字对应当前配置。
+let expBusy = false, expPending = false;
+async function runExperiment() {
+  if (!gpu.device) return;
+  if (expBusy) { expPending = true; return; }
+  expBusy = true;
+  try {
+    await renderOnce();
+  } finally {
+    expBusy = false;
+    if (expPending) { expPending = false; runExperiment(); }
+  }
+}
+
+async function renderOnce() {
+  const order = $('#c-order').value, frontFace = $('#c-front').value, cullMode = $('#c-cull').value;
+
+  // 画到可见画布
+  const encoder = gpu.device.createCommandEncoder();
+  const pass = encoder.beginRenderPass({
+    colorAttachments: [{
+      view: gpu.context.getCurrentTexture().createView(),
+      clearValue: { r: 0.07, g: 0.07, b: 0.09, a: 1 },
+      loadOp: 'clear', storeOp: 'store',
+    }],
+  });
+  pass.setPipeline(pipelineFor(order, frontFace, cullMode, gpu.format));
+  pass.draw(3);
+  pass.end();
+
+  // 同一套配置画到 64×64 离屏纹理，拷回内存数像素
+  const pass2 = encoder.beginRenderPass({
+    colorAttachments: [{
+      view: gpu.off.createView(),
+      clearValue: { r: 0, g: 0, b: 0, a: 0 },
+      loadOp: 'clear', storeOp: 'store',
+    }],
+  });
+  pass2.setPipeline(pipelineFor(order, frontFace, cullMode, 'rgba8unorm'));
+  pass2.draw(3);
+  pass2.end();
+  encoder.copyTextureToBuffer({ texture: gpu.off }, { buffer: gpu.buf, bytesPerRow: 256 }, [64, 64]);
+  gpu.device.queue.submit([encoder.finish()]);
+
+  await gpu.buf.mapAsync(GPUMapMode.READ);
+  const px = new Uint8Array(gpu.buf.getMappedRange().slice(0));
+  gpu.buf.unmap();
+  let filled = 0;
+  for (let i = 3; i < px.length; i += 4) if (px[i] > 0) filled++;
+  const { culled } = verdictOf(order, frontFace, cullMode);
+  $('#c-measure').innerHTML = `实测：离屏纹理上画出了 <b>${filled}</b> / 4096 个像素 → `
+    + `<span class="badge ${filled === 0 ? 'bad' : 'ok'}">${filled === 0 ? '什么都没画出来' : '画出来了'}</span>`
+    + `，与判定 <b>${(filled === 0) === culled ? '一致' : '不一致（判定错了）'}</b>`;
+}
+
+async function initGPU() {
+  if (!navigator.gpu) { $('#c-measure').textContent = '实测：这个浏览器没有 navigator.gpu，跑不了。'; return; }
+  const adapter = await navigator.gpu.requestAdapter();
+  if (!adapter) { $('#c-measure').textContent = '实测：requestAdapter() 返回 null。'; return; }
+  gpu.device = await adapter.requestDevice();
+  gpu.context = $('#c-canvas').getContext('webgpu');
+  gpu.format = navigator.gpu.getPreferredCanvasFormat();
+  gpu.context.configure({ device: gpu.device, format: gpu.format });
+  gpu.off = gpu.device.createTexture({
+    size: [64, 64], format: 'rgba8unorm',
+    usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
+  });
+  gpu.buf = gpu.device.createBuffer({
+    size: 64 * 256, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+  });
+  await runExperiment();
+}
+
+['#c-order', '#c-front', '#c-cull'].forEach((sel) => {
+  $(sel).addEventListener('change', () => { paintVerdict(); runExperiment(); });
+});
+paintVerdict();
+initGPU();
+
+/* ④ 光栅化扫描 */
+const rast = $('#rast'), rctx = rast.getContext('2d');
+const CELLS = 28, CELL = 280 / CELLS;
+const fbPts = ORDERS.normal.map(toFb).map(([x, y]) => [x / FB * 280, y / FB * 280]);
+
+function inside([px, py]) {
+  const [[ax, ay], [bx, by], [cx, cy]] = fbPts;
+  const s = (x1, y1, x2, y2, x3, y3) => (x2 - x1) * (y3 - y1) - (x3 - x1) * (y2 - y1);
+  const d1 = s(ax, ay, bx, by, px, py), d2 = s(bx, by, cx, cy, px, py), d3 = s(cx, cy, ax, ay, px, py);
+  return (d1 >= 0 && d2 >= 0 && d3 >= 0) || (d1 <= 0 && d2 <= 0 && d3 <= 0);
+}
+
+function rastBase() {
+  rctx.clearRect(0, 0, 280, 280);
+  rctx.strokeStyle = 'rgba(128,128,128,.25)';
+  rctx.lineWidth = 1;
+  for (let i = 0; i <= CELLS; i++) {
+    rctx.beginPath(); rctx.moveTo(i * CELL, 0); rctx.lineTo(i * CELL, 280); rctx.stroke();
+    rctx.beginPath(); rctx.moveTo(0, i * CELL); rctx.lineTo(280, i * CELL); rctx.stroke();
+  }
+  rctx.strokeStyle = '#ff7433';
+  rctx.lineWidth = 2;
+  rctx.beginPath();
+  rctx.moveTo(fbPts[0][0], fbPts[0][1]);
+  rctx.lineTo(fbPts[1][0], fbPts[1][1]);
+  rctx.lineTo(fbPts[2][0], fbPts[2][1]);
+  rctx.closePath(); rctx.stroke();
+}
+
+let rTimer = null, rRow = 0, rCount = 0;
+function rastReset() {
+  if (rTimer) { clearInterval(rTimer); rTimer = null; }
+  rRow = 0; rCount = 0; $('#r-count').textContent = '0';
+  $('#r-play').disabled = false; $('#r-play').textContent = '开始扫描 ▸';
+  rastBase();
+}
+function rastStep() {
+  if (rRow >= CELLS) { clearInterval(rTimer); rTimer = null; $('#r-play').textContent = '扫完了'; return; }
+  rctx.fillStyle = 'rgba(47,91,234,.18)';
+  rctx.fillRect(0, rRow * CELL, 280, CELL);
+  for (let col = 0; col < CELLS; col++) {
+    const cx = (col + 0.5) * CELL, cy = (rRow + 0.5) * CELL;
+    if (inside([cx, cy])) {
+      rctx.fillStyle = '#ff7433';
+      rctx.fillRect(col * CELL + 1, rRow * CELL + 1, CELL - 2, CELL - 2);
+      rCount++;
+    }
+  }
+  $('#r-count').textContent = String(rCount);
+  rRow++;
+}
+$('#r-play').addEventListener('click', () => {
+  if (rTimer) return;
+  if (rRow >= CELLS) rastReset();
+  $('#r-play').textContent = '扫描中……';
+  rTimer = setInterval(rastStep, 90);
+});
+$('#r-reset').addEventListener('click', rastReset);
+rastReset();
+</script>
+</body>
+</html>
