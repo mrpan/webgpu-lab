@@ -1,0 +1,62 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>03 · 三色三角形 | webgpu-lab</title>
+<p id="status" role="status">正在启动 WebGPU…</p>
+<canvas id="c" width="512" height="512" style="background:#111;max-width:100%;height:auto"></canvas>
+<script type="module">
+const status = document.getElementById("status");
+try {
+if (!navigator.gpu) throw new Error("当前浏览器无法使用 WebGPU，请先运行第一篇的环境检测页。");
+const adapter = await navigator.gpu.requestAdapter();
+if (!adapter) throw new Error("未找到可用的 GPU 适配器，请检查浏览器与硬件支持。");
+const device  = await adapter.requestDevice();
+
+const context = document.getElementById('c').getContext('webgpu');
+const format  = navigator.gpu.getPreferredCanvasFormat();
+context.configure({ device, format });
+device.addEventListener("uncapturederror", e => { status.textContent = "GPU 错误：" + e.error.message; });
+
+const shader = device.createShaderModule({ code: `
+struct VSOut {
+  @builtin(position) pos : vec4f,
+  @location(0) color : vec3f,   // 改成 @location(0) @interpolate(flat) 就变单色
+};
+
+@vertex fn vs(@builtin(vertex_index) i : u32) -> VSOut {
+  let p = array<vec2f, 3>(vec2f(0.0, 0.7), vec2f(-0.75, -0.6), vec2f(0.75, -0.6));
+  let c = array<vec3f, 3>(vec3f(1.0, 0.25, 0.2), vec3f(0.2, 0.8, 0.35), vec3f(0.25, 0.45, 1.0));
+  var out : VSOut;
+  out.pos = vec4f(p[i], 0.0, 1.0);
+  out.color = c[i];
+  return out;
+}
+
+@fragment fn fs(in : VSOut) -> @location(0) vec4f {
+  return vec4f(in.color, 1.0);
+}
+`});
+
+const pipeline = device.createRenderPipeline({
+  layout: 'auto',
+  vertex:   { module: shader, entryPoint: 'vs' },
+  fragment: { module: shader, entryPoint: 'fs', targets: [{ format }] },
+});
+
+const encoder = device.createCommandEncoder();
+const pass = encoder.beginRenderPass({
+  colorAttachments: [{
+    view: context.getCurrentTexture().createView(),
+    clearValue: { r: 0.07, g: 0.07, b: 0.09, a: 1 },
+    loadOp: 'clear',
+    storeOp: 'store',
+  }],
+});
+pass.setPipeline(pipeline);
+pass.draw(3);
+pass.end();
+device.queue.submit([encoder.finish()]);
+status.textContent = "已提交绘制：三个顶点各一种颜色，中间是插值出来的。";
+} catch (error) {
+  status.textContent = "无法启动：" + error.message;
+}
+</script>
