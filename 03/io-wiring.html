@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>03 · 阶段间变量接线台 | webgpu-lab</title>
+<link rel="icon" href="data:,">
+<style>
+  :root {
+    --bg: #f7f7f5; --fg: #1d1d1f; --muted: #6b6b70; --card: #ffffff; --line: #e3e3e0;
+    --ok: #1a7f37; --ok-bg: #e7f5ec; --bad: #c62828; --bad-bg: #fdecec; --run: #2f5bea; --run-bg: #eaf0ff;
+    --accent: #2f5bea; --code-bg: #f0f0ed;
+    --mono: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #121214; --fg: #e8e8ea; --muted: #9a9aa2; --card: #1b1b1f; --line: #2c2c32;
+      --ok: #4ac26b; --ok-bg: #16281c; --bad: #ff6b6b; --bad-bg: #2d1717; --run: #7b9bff; --run-bg: #1a2240;
+      --accent: #6f8fff; --code-bg: #232328;
+    }
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body { margin: 0; background: var(--bg); color: var(--fg);
+    font: 15px/1.6 system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; }
+  main { max-width: 1020px; margin: 0 auto; padding: 24px 16px 48px; }
+  a { color: var(--accent); }
+  h1 { font-size: 1.4rem; margin: 8px 0 4px; }
+  h2 { font-size: 1.05rem; margin: 0 0 12px; }
+  .sub { color: var(--muted); margin: 0 0 20px; }
+  code { font-family: var(--mono); font-size: .85rem; }
+  .panel { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin: 0 0 16px; }
+  .cols { display: grid; grid-template-columns: 1fr 340px; gap: 16px; align-items: start; }
+  .cols > div { min-width: 0; }
+  .note { font-size: .84rem; color: var(--muted); margin: 10px 0 0; }
+  .note b { color: var(--fg); }
+
+  .ctl { display: grid; grid-template-columns: auto 1fr 1fr; gap: 8px 12px; align-items: center;
+    font-size: .88rem; margin: 0 0 12px; }
+  .ctl .hd { color: var(--muted); font-weight: 600; }
+  select { font: inherit; font-size: .84rem; padding: 4px 6px; border-radius: 6px; width: 100%;
+    border: 1px solid var(--line); background: var(--card); color: var(--fg); }
+  .buttons { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; }
+  button { font: inherit; font-size: .86rem; border: 1px solid var(--accent); background: var(--accent); color: #fff;
+    border-radius: 8px; padding: 6px 11px; cursor: pointer; }
+  button.ghost { background: transparent; color: var(--accent); }
+
+  canvas { display: block; width: 300px; max-width: 100%; height: auto; border-radius: 8px; background: #111; }
+  pre { font-family: var(--mono); font-size: .78rem; white-space: pre-wrap; word-break: break-word;
+    background: var(--code-bg); border-radius: 8px; padding: 10px 12px; margin: 0; }
+  pre mark { background: var(--run-bg); color: inherit; border-radius: 3px; padding: 0 2px; }
+  .result { border-radius: 8px; padding: 10px 12px; font-size: .86rem; margin: 0 0 10px; }
+  .result.ok { background: var(--ok-bg); color: var(--ok); }
+  .result.bad { background: var(--bad-bg); color: var(--bad); }
+  .err { font-family: var(--mono); font-size: .76rem; white-space: pre-wrap; word-break: break-word;
+    margin: 8px 0 0; color: var(--fg); background: var(--card); border: 1px solid var(--line);
+    border-radius: 6px; padding: 8px 10px; max-height: 260px; overflow: auto; }
+  @media (max-width: 760px) { .cols { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<main>
+  <a href="./">← 03 实验索引</a>
+  <h1>阶段间变量接线台</h1>
+  <p class="sub">顶点着色器输出、片段着色器接收，靠的是 <code>@location</code> 的数字，不是变量名。把两边改得对不上，看浏览器报什么错——错误原文原样打在下面，不做任何改写。</p>
+
+  <div class="panel">
+    <div class="buttons">
+      <button id="p-ok" type="button">正确接线</button>
+      <button id="p-loc" type="button" class="ghost">location 对不上</button>
+      <button id="p-type" type="button" class="ghost">类型对不上</button>
+      <button id="p-interp" type="button" class="ghost">只有一边写 flat</button>
+      <button id="p-int" type="button" class="ghost">整数不写 flat</button>
+      <button id="p-old" type="button" class="ghost">2021 年的旧写法</button>
+    </div>
+
+    <div class="ctl">
+      <span class="hd"></span><span class="hd">顶点输出</span><span class="hd">片段输入</span>
+      <span class="hd">@location</span>
+      <select id="v-loc"><option>0</option><option>1</option></select>
+      <select id="f-loc"><option>0</option><option>1</option></select>
+      <span class="hd">类型</span>
+      <select id="v-type"><option>vec3f</option><option>vec4f</option><option>u32</option></select>
+      <select id="f-type"><option>vec3f</option><option>vec4f</option><option>u32</option></select>
+      <span class="hd">@interpolate</span>
+      <select id="v-interp"><option value="">不写</option><option value="flat">flat</option></select>
+      <select id="f-interp"><option value="">不写</option><option value="flat">flat</option></select>
+    </div>
+
+    <div class="cols">
+      <div>
+        <pre id="code"></pre>
+      </div>
+      <div>
+        <div class="result" id="result">正在启动 WebGPU…</div>
+        <div class="err" id="err" hidden></div>
+        <canvas id="c" width="300" height="300"></canvas>
+        <p class="note">画得出来才说明这套接线是通的。报错时画布保持上一次的内容。</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>规范怎么说</h2>
+    <p class="note" style="margin-top:0">WebGPU 规范校验渲染管线时的原文（<code>spec/index.bs</code>）：</p>
+    <pre>For each user-defined input of descriptor.fragment there
+must be a user-defined output of descriptor.vertex that
+matches the location, type, and interpolation of the input.</pre>
+    <p class="note">三项都要对上：<b>location、类型、插值</b>。另外 WGSL 规范要求阶段间传整数
+      （<code>i32</code> / <code>u32</code>）必须写 <code>flat</code>，这条在着色器编译阶段就会被拦下，
+      比管线校验更早报错。</p>
+  </div>
+</main>
+
+<script type="module">
+const $ = (id) => document.getElementById(id);
+
+const OLD_SYNTAX = `struct VSOut {
+  [[builtin(position)]] pos : vec4<f32>;
+  [[location(0)]] color : vec3<f32>;
+};
+
+[[stage(vertex)]]
+fn vs([[builtin(vertex_index)]] i : u32) -> VSOut {
+  var p = array<vec2<f32>, 3>(vec2<f32>(0.0, 0.7), vec2<f32>(-0.75, -0.6), vec2<f32>(0.75, -0.6));
+  var out : VSOut;
+  out.pos = vec4<f32>(p[i], 0.0, 1.0);
+  out.color = vec3<f32>(1.0, 0.45, 0.2);
+  return out;
+}
+
+[[stage(fragment)]]
+fn fs(in : VSOut) -> [[location(0)]] vec4<f32> {
+  return vec4<f32>(in.color, 1.0);
+}`;
+
+function build() {
+  const vt = $('v-type').value, ft = $('f-type').value;
+  const vi = $('v-interp').value, fi = $('f-interp').value;
+  const attr = (x) => (x ? ` @interpolate(${x})` : '');
+  const value = (t) => (t === 'u32' ? 'u32(i)' : t === 'vec4f' ? 'vec4f(c, 1.0)' : 'c');
+  const toColor = (t) => (t === 'u32' ? 'vec4f(f32(in.tint) / 3.0, 0.45, 0.2, 1.0)'
+    : t === 'vec4f' ? 'in.tint' : 'vec4f(in.tint, 1.0)');
+  return `struct VSOut {
+  @builtin(position) pos : vec4f,
+  @location(${$('v-loc').value})${attr(vi)} tint : ${vt},
+};
+
+struct FSIn {
+  @builtin(position) pos : vec4f,
+  @location(${$('f-loc').value})${attr(fi)} tint : ${ft},
+};
+
+@vertex fn vs(@builtin(vertex_index) i : u32) -> VSOut {
+  let p = array<vec2f, 3>(vec2f(0.0, 0.7), vec2f(-0.75, -0.6), vec2f(0.75, -0.6));
+  let cs = array<vec3f, 3>(vec3f(1.0, 0.25, 0.2), vec3f(0.2, 0.8, 0.35), vec3f(0.25, 0.45, 1.0));
+  let c = cs[i];
+  var out : VSOut;
+  out.pos = vec4f(p[i], 0.0, 1.0);
+  out.tint = ${value(vt)};
+  return out;
+}
+
+@fragment fn fs(in : FSIn) -> @location(0) vec4f {
+  return ${toColor(ft)};
+}`;
+}
+
+function showCode(src) {
+  $('code').replaceChildren();
+  const re = /@location\(\d\)(\s@interpolate\([a-z]+\))?|\[\[[a-z_]+\([^)]*\)\]\]/g;
+  let last = 0, m;
+  while ((m = re.exec(src))) {
+    $('code').append(src.slice(last, m.index));
+    const mark = document.createElement('mark');
+    mark.textContent = m[0];
+    $('code').append(mark);
+    last = m.index + m[0].length;
+  }
+  $('code').append(src.slice(last));
+}
+
+let device, context, format;
+
+function result(cls, text, raw) {
+  $('result').className = 'result ' + cls;
+  $('result').textContent = text;
+  $('err').hidden = !raw;
+  $('err').textContent = raw || '';
+}
+
+async function run(src) {
+  showCode(src);
+  if (!device) return;
+
+  device.pushErrorScope('validation');
+  const module = device.createShaderModule({ code: src });
+  const info = await module.getCompilationInfo();
+  const errs = info.messages.filter((m) => m.type === 'error');
+  if (errs.length) {
+    await device.popErrorScope();
+    result('bad', `着色器编译不过（${errs.length} 条错误），管线还没轮到创建。浏览器原文：`,
+      errs.map((m) => `第 ${m.lineNum} 行第 ${m.linePos} 列：${m.message}`).join('\n'));
+    return;
+  }
+
+  let pipeline;
+  try {
+    pipeline = device.createRenderPipeline({
+      layout: 'auto',
+      vertex: { module, entryPoint: 'vs' },
+      fragment: { module, entryPoint: 'fs', targets: [{ format }] },
+    });
+  } catch (e) {
+    await device.popErrorScope();
+    result('bad', '创建管线时抛错。浏览器原文：', e.message);
+    return;
+  }
+  const err = await device.popErrorScope();
+  if (err) {
+    result('bad', '管线校验没过，画不出来。浏览器原文：', err.message);
+    return;
+  }
+
+  const encoder = device.createCommandEncoder();
+  const pass = encoder.beginRenderPass({
+    colorAttachments: [{
+      view: context.getCurrentTexture().createView(),
+      clearValue: { r: 0.07, g: 0.07, b: 0.09, a: 1 },
+      loadOp: 'clear', storeOp: 'store',
+    }],
+  });
+  pass.setPipeline(pipeline);
+  pass.draw(3);
+  pass.end();
+  device.queue.submit([encoder.finish()]);
+  result('ok', '接线通了：location、类型、插值三项都对得上，三角形画出来了。');
+}
+
+const rerun = () => run(build());
+for (const id of ['v-loc', 'f-loc', 'v-type', 'f-type', 'v-interp', 'f-interp']) {
+  $(id).addEventListener('change', rerun);
+}
+
+function preset(v) {
+  $('v-loc').value = v.vloc ?? '0';
+  $('f-loc').value = v.floc ?? '0';
+  $('v-type').value = v.vtype ?? 'vec3f';
+  $('f-type').value = v.ftype ?? 'vec3f';
+  $('v-interp').value = v.vi ?? '';
+  $('f-interp').value = v.fi ?? '';
+  rerun();
+}
+
+$('p-ok').addEventListener('click', () => preset({}));
+$('p-loc').addEventListener('click', () => preset({ floc: '1' }));
+$('p-type').addEventListener('click', () => preset({ ftype: 'vec4f' }));
+$('p-interp').addEventListener('click', () => preset({ vi: 'flat' }));
+$('p-int').addEventListener('click', () => preset({ vtype: 'u32', ftype: 'u32' }));
+$('p-old').addEventListener('click', () => run(OLD_SYNTAX));
+
+try {
+  if (!navigator.gpu) throw new Error('这个浏览器用不了 WebGPU，先跑第 1 篇的环境检测页。');
+  const adapter = await navigator.gpu.requestAdapter();
+  if (!adapter) throw new Error('没拿到可用的 GPU 适配器。');
+  device = await adapter.requestDevice();
+  format = navigator.gpu.getPreferredCanvasFormat();
+  context = $('c').getContext('webgpu');
+  context.configure({ device, format, alphaMode: 'opaque' });
+  device.addEventListener('uncapturederror', (e) => result('bad', '未捕获的 GPU 错误：', e.error.message));
+  await rerun();
+} catch (e) {
+  showCode(build());
+  result('bad', '启动失败：', e.message);
+}
+</script>
+</body>
+</html>

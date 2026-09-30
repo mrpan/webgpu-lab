@@ -1,0 +1,361 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>03 · 顶点颜色怎么插值 | webgpu-lab</title>
+<link rel="icon" href="data:,">
+<style>
+  :root {
+    --bg: #f7f7f5; --fg: #1d1d1f; --muted: #6b6b70; --card: #ffffff; --line: #e3e3e0;
+    --ok: #1a7f37; --ok-bg: #e7f5ec; --bad: #c62828; --bad-bg: #fdecec; --run: #2f5bea; --run-bg: #eaf0ff;
+    --accent: #2f5bea; --code-bg: #f0f0ed;
+    --mono: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #121214; --fg: #e8e8ea; --muted: #9a9aa2; --card: #1b1b1f; --line: #2c2c32;
+      --ok: #4ac26b; --ok-bg: #16281c; --bad: #ff6b6b; --bad-bg: #2d1717; --run: #7b9bff; --run-bg: #1a2240;
+      --accent: #6f8fff; --code-bg: #232328;
+    }
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body { margin: 0; background: var(--bg); color: var(--fg);
+    font: 15px/1.6 system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; }
+  main { max-width: 1020px; margin: 0 auto; padding: 24px 16px 48px; }
+  a { color: var(--accent); }
+  h1 { font-size: 1.4rem; margin: 8px 0 4px; }
+  h2 { font-size: 1.05rem; margin: 0 0 12px; }
+  .sub { color: var(--muted); margin: 0 0 20px; }
+  code { font-family: var(--mono); font-size: .85rem; }
+  .panel { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin: 0 0 16px; }
+  .cols { display: grid; grid-template-columns: 360px 1fr; gap: 16px; align-items: start; }
+  .cols > div { min-width: 0; }
+  .note { font-size: .84rem; color: var(--muted); margin: 10px 0 0; }
+  .note b { color: var(--fg); }
+
+  .stage { position: relative; width: 320px; max-width: 100%; }
+  canvas { display: block; width: 320px; max-width: 100%; height: auto; border-radius: 8px;
+    background: #111; touch-action: none; cursor: crosshair; }
+  #probe { position: absolute; width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%;
+    border: 2px solid #fff; box-shadow: 0 0 0 1px #000; pointer-events: none; }
+
+  .ctl { display: flex; flex-wrap: wrap; gap: 8px 14px; margin: 0 0 12px; }
+  .ctl label { display: flex; align-items: center; gap: 6px; font-size: .88rem; }
+  select { font: inherit; font-size: .86rem; padding: 4px 6px; border-radius: 6px;
+    border: 1px solid var(--line); background: var(--card); color: var(--fg); }
+  button { font: inherit; font-size: .88rem; border: 1px solid var(--accent); background: var(--accent); color: #fff;
+    border-radius: 8px; padding: 7px 12px; cursor: pointer; }
+  button.ghost { background: transparent; color: var(--accent); }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+
+  table { border-collapse: collapse; width: 100%; font-size: .84rem; }
+  th, td { border: 1px solid var(--line); padding: 5px 8px; text-align: left; }
+  th { color: var(--muted); font-weight: 600; white-space: nowrap; }
+  td.mono, .mono { font-family: var(--mono); }
+  .swatch { display: inline-block; width: 14px; height: 14px; border-radius: 3px; vertical-align: -2px;
+    border: 1px solid var(--line); margin-right: 6px; }
+  .verdict { font-size: .84rem; border-radius: 8px; padding: 8px 10px; margin: 10px 0 0; }
+  .verdict.ok { background: var(--ok-bg); color: var(--ok); }
+  .verdict.bad { background: var(--bad-bg); color: var(--bad); }
+  pre { font-family: var(--mono); font-size: .78rem; white-space: pre; overflow-x: auto;
+    background: var(--code-bg); border-radius: 8px; padding: 10px 12px; margin: 0; }
+  pre mark { background: var(--run-bg); color: inherit; border-radius: 3px; padding: 0 2px; }
+  @media (max-width: 760px) { .cols { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<main>
+  <a href="./">← 03 实验索引</a>
+  <h1>顶点颜色怎么插值</h1>
+  <p class="sub">三个顶点三种颜色，中间的过渡由光栅化插值得到。把鼠标放到三角形上（或点「自动巡游」），看同一个点上 GPU 实际算出的颜色和按重心坐标预测的颜色对不对得上。</p>
+
+  <div class="panel">
+    <div class="ctl">
+      <label>插值写法
+        <select id="mode">
+          <option value="default">不写 @interpolate（默认）</option>
+          <option value="perspective,center">@interpolate(perspective, center)</option>
+          <option value="linear,center">@interpolate(linear, center)</option>
+          <option value="flat,first">@interpolate(flat, first)</option>
+          <option value="flat,either">@interpolate(flat, either)</option>
+        </select>
+      </label>
+      <button id="sweep" type="button">自动巡游</button>
+      <button id="reset" type="button" class="ghost">停止</button>
+    </div>
+
+    <div class="cols">
+      <div>
+        <div class="stage">
+          <canvas id="c" width="320" height="320"></canvas>
+          <div id="probe" hidden></div>
+        </div>
+        <p class="note" id="canvasnote">正在启动 WebGPU…</p>
+      </div>
+
+      <div>
+        <h2>探针读数</h2>
+        <table>
+          <tr><th>画布位置</th><td class="mono" id="r-px">—</td></tr>
+          <tr><th>NDC 坐标</th><td class="mono" id="r-ndc">—</td></tr>
+          <tr><th>重心权重 w₀ / w₁ / w₂</th><td class="mono" id="r-w">—</td></tr>
+          <tr><th>GPU 算出的颜色</th><td class="mono" id="r-gpu">—</td></tr>
+          <tr><th>按权重预测的颜色</th><td class="mono" id="r-pred">—</td></tr>
+        </table>
+        <div class="verdict" id="r-verdict" hidden></div>
+        <p class="note">三个顶点：<span class="swatch" style="background:#ff4033"></span>w₀ 顶部 ·
+          <span class="swatch" style="background:#33cc59"></span>w₁ 左下 ·
+          <span class="swatch" style="background:#4073ff"></span>w₂ 右下。
+          权重由 JavaScript 按重心坐标算；颜色是把这一帧读回来的真实像素。</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>当前跑的着色器</h2>
+    <pre id="code"></pre>
+    <p class="note">切换上面的下拉框，这段代码会跟着变，页面也会用新代码重建管线。
+      <b>顶点输出与片段输入的插值写法必须一致</b>，所以这里把同一个结构体同时用在两个阶段。</p>
+  </div>
+
+  <div class="panel">
+    <h2>规范怎么说</h2>
+    <table>
+      <tr><th>默认值</th><td>不写 <code>@interpolate</code> 时，浮点型的用户自定义 IO 按 <code>@interpolate(perspective, center)</code> 处理</td></tr>
+      <tr><th>flat</th><td>值不插值（Values are not interpolated），整个图元取 provoking vertex 的值；采样只能是 <code>first</code> 或 <code>either</code>，不写则按 <code>first</code></td></tr>
+      <tr><th>either</th><td>取第一个还是最后一个顶点由实现决定</td></tr>
+      <tr><th>整数类型</th><td>阶段间传整数（<code>i32</code>/<code>u32</code>）必须写 <code>flat</code></td></tr>
+      <tr><th>放哪儿</th><td><code>@interpolate</code> 只能加在带 <code>@location</code> 的声明上</td></tr>
+    </table>
+    <p class="note">出处：W3C WGSL 规范 <code>#interpolation</code> 一节（本页说明抄自规范源文件 <code>wgsl/index.bs</code>）。</p>
+  </div>
+</main>
+
+<script type="module">
+const $ = (id) => document.getElementById(id);
+const W = 320, H = 320;
+// 三个顶点：NDC 位置 + 颜色，和着色器里的数组保持一致
+const V = [
+  { p: [0.0, 0.7], c: [1.0, 0.25, 0.2] },
+  { p: [-0.75, -0.6], c: [0.2, 0.8, 0.35] },
+  { p: [0.75, -0.6], c: [0.25, 0.45, 1.0] },
+];
+
+const wgsl = (mode) => {
+  const attr = mode === 'default' ? '' : ` @interpolate(${mode.split(',').join(', ')})`;
+  return `struct VSOut {
+  @builtin(position) pos : vec4f,
+  @location(0)${attr} color : vec3f,
+};
+
+@vertex fn vs(@builtin(vertex_index) i : u32) -> VSOut {
+  let p = array<vec2f, 3>(vec2f(0.0, 0.7), vec2f(-0.75, -0.6), vec2f(0.75, -0.6));
+  let c = array<vec3f, 3>(vec3f(1.0, 0.25, 0.2), vec3f(0.2, 0.8, 0.35), vec3f(0.25, 0.45, 1.0));
+  var out : VSOut;
+  out.pos = vec4f(p[i], 0.0, 1.0);
+  out.color = c[i];
+  return out;
+}
+
+@fragment fn fs(in : VSOut) -> @location(0) vec4f {
+  return vec4f(in.color, 1.0);
+}`;
+};
+
+function showCode(mode) {
+  const src = wgsl(mode);
+  $('code').replaceChildren();
+  for (const line of src.split('\n')) {
+    const i = line.indexOf('@interpolate');
+    if (i < 0) {
+      $('code').append(line + '\n');
+    } else {
+      const end = line.indexOf(')', i) + 1;
+      const m = document.createElement('mark');
+      m.textContent = line.slice(i, end);
+      $('code').append(line.slice(0, i), m, line.slice(end) + '\n');
+    }
+  }
+}
+
+let device, context, format, offscreen, readBuf, pixels = null, timer = 0;
+
+function note(text, cls) {
+  $('canvasnote').textContent = text;
+  $('canvasnote').style.color = cls === 'bad' ? 'var(--bad)' : '';
+}
+
+async function init() {
+  if (!navigator.gpu) throw new Error('这个浏览器用不了 WebGPU，先跑第 1 篇的环境检测页。');
+  const adapter = await navigator.gpu.requestAdapter();
+  if (!adapter) throw new Error('没拿到可用的 GPU 适配器。');
+  device = await adapter.requestDevice();
+  format = navigator.gpu.getPreferredCanvasFormat();
+  context = $('c').getContext('webgpu');
+  context.configure({
+    device, format, alphaMode: 'opaque',
+    usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_DST,
+  });
+  offscreen = device.createTexture({
+    size: [W, H], format,
+    usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
+  });
+  readBuf = device.createBuffer({ size: W * H * 4, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
+  device.addEventListener('uncapturederror', (e) => note('GPU 错误：' + e.error.message, 'bad'));
+}
+
+async function draw(mode) {
+  const module = device.createShaderModule({ code: wgsl(mode) });
+  const info = await module.getCompilationInfo();
+  const errs = info.messages.filter((m) => m.type === 'error');
+  if (errs.length) throw new Error('着色器编译失败：' + errs[0].message);
+
+  device.pushErrorScope('validation');
+  const pipeline = device.createRenderPipeline({
+    layout: 'auto',
+    vertex: { module, entryPoint: 'vs' },
+    fragment: { module, entryPoint: 'fs', targets: [{ format }] },
+  });
+  const err = await device.popErrorScope();
+  if (err) throw new Error('管线创建失败：' + err.message);
+
+  const encoder = device.createCommandEncoder();
+  const pass = encoder.beginRenderPass({
+    colorAttachments: [{
+      view: offscreen.createView(),
+      clearValue: { r: 0.07, g: 0.07, b: 0.09, a: 1 },
+      loadOp: 'clear', storeOp: 'store',
+    }],
+  });
+  pass.setPipeline(pipeline);
+  pass.draw(3);
+  pass.end();
+  // 同一张画好的纹理：一份贴到画布给人看，一份拷回内存给探针读
+  encoder.copyTextureToTexture({ texture: offscreen }, { texture: context.getCurrentTexture() }, [W, H]);
+  encoder.copyTextureToBuffer({ texture: offscreen }, { buffer: readBuf, bytesPerRow: W * 4 }, [W, H]);
+  device.queue.submit([encoder.finish()]);
+
+  await readBuf.mapAsync(GPUMapMode.READ);
+  pixels = new Uint8Array(readBuf.getMappedRange()).slice();
+  readBuf.unmap();
+  note(`已绘制，并把 ${W}×${H} 的像素读回内存供探针查询。`);
+}
+
+// 帧缓冲坐标 → NDC；再解重心坐标
+function bary(nx, ny) {
+  const [x0, y0] = V[0].p, [x1, y1] = V[1].p, [x2, y2] = V[2].p;
+  const d = (y1 - y2) * (x0 - x2) + (x2 - x1) * (y0 - y2);
+  const w0 = ((y1 - y2) * (nx - x2) + (x2 - x1) * (ny - y2)) / d;
+  const w1 = ((y2 - y0) * (nx - x2) + (x0 - x2) * (ny - y2)) / d;
+  return [w0, w1, 1 - w0 - w1];
+}
+
+const hex = (r, g, b) => '#' + [r, g, b].map((v) => Math.round(v).toString(16).padStart(2, '0')).join('');
+
+function probe(px, py) {
+  if (!pixels) return;
+  const x = Math.max(0, Math.min(W - 1, Math.round(px)));
+  const y = Math.max(0, Math.min(H - 1, Math.round(py)));
+  const nx = (x + 0.5) / W * 2 - 1;
+  const ny = 1 - (y + 0.5) / H * 2;
+  const [w0, w1, w2] = bary(nx, ny);
+  const inside = w0 >= 0 && w1 >= 0 && w2 >= 0;
+
+  const o = (y * W + x) * 4;
+  // 画布格式是 bgra8unorm：字节顺序为 B、G、R、A
+  const bgra = format.startsWith('bgra');
+  const gr = pixels[o + (bgra ? 2 : 0)], gg = pixels[o + 1], gb = pixels[o + (bgra ? 0 : 2)];
+
+  const mode = $('mode').value;
+  const flat = mode.startsWith('flat');
+  const pred = flat
+    ? V[0].c.map((v) => v * 255)
+    : [0, 1, 2].map((k) => (w0 * V[0].c[k] + w1 * V[1].c[k] + w2 * V[2].c[k]) * 255);
+
+  $('probe').hidden = false;
+  $('probe').style.left = (x / W * 100) + '%';
+  $('probe').style.top = (y / H * 100) + '%';
+  $('r-px').textContent = `x=${x}, y=${y}`;
+  $('r-ndc').textContent = `(${nx.toFixed(3)}, ${ny.toFixed(3)})`;
+  $('r-w').textContent = `${w0.toFixed(3)} / ${w1.toFixed(3)} / ${w2.toFixed(3)}` + (inside ? '' : '（在三角形外）');
+  $('r-gpu').innerHTML = '';
+  $('r-gpu').append(swatch(hex(gr, gg, gb)), `rgb(${gr}, ${gg}, ${gb})`);
+  $('r-pred').innerHTML = '';
+
+  if (!inside) {
+    $('r-pred').append('—（三角形外没有片段，读到的是背景色）');
+    verdict(null);
+    return;
+  }
+  $('r-pred').append(swatch(hex(...pred)), `rgb(${pred.map((v) => Math.round(v)).join(', ')})`);
+  const diff = Math.max(...pred.map((v, i) => Math.abs(v - [gr, gg, gb][i])));
+  verdict(diff, flat);
+}
+
+function swatch(color) {
+  const s = document.createElement('span');
+  s.className = 'swatch';
+  s.style.background = color;
+  return s;
+}
+
+function verdict(diff, flat) {
+  const el = $('r-verdict');
+  if (diff === null) { el.hidden = true; return; }
+  el.hidden = false;
+  const ok = diff <= 3;
+  el.className = 'verdict ' + (ok ? 'ok' : 'bad');
+  el.textContent = ok
+    ? (flat
+      ? `对得上：最大通道差 ${diff.toFixed(0)}/255。flat 不插值，整片都是第一个顶点的颜色。`
+      : `对得上：最大通道差 ${diff.toFixed(0)}/255，GPU 给的就是三个顶点颜色按重心权重的混合。`)
+    : `对不上：最大通道差 ${diff.toFixed(0)}/255，值得查一下预测公式或插值写法。`;
+}
+
+function toCanvas(e) {
+  const r = $('c').getBoundingClientRect();
+  return [(e.clientX - r.left) / r.width * W, (e.clientY - r.top) / r.height * H];
+}
+
+$('c').addEventListener('pointermove', (e) => { stopSweep(); probe(...toCanvas(e)); });
+
+function stopSweep() { if (timer) { clearInterval(timer); timer = 0; } }
+
+$('reset').addEventListener('click', () => { stopSweep(); $('probe').hidden = true; });
+
+$('sweep').addEventListener('click', () => {
+  stopSweep();
+  // 从左下角沿底边走到右下角，再斜着走到顶点，权重会依次把三种颜色走一遍
+  const path = [];
+  for (let t = 0; t <= 1; t += 0.02) path.push([60 + t * 200, 250]);
+  for (let t = 0; t <= 1; t += 0.02) path.push([260 - t * 100, 250 - t * 200]);
+  let i = 0;
+  timer = setInterval(() => {
+    probe(...path[i % path.length]);
+    i++;
+  }, 60);
+});
+
+$('mode').addEventListener('change', async () => {
+  showCode($('mode').value);
+  try {
+    await draw($('mode').value);
+    probe(...[160, 200]);
+  } catch (e) {
+    note(e.message, 'bad');
+  }
+});
+
+try {
+  showCode('default');
+  await init();
+  await draw('default');
+  probe(160, 200);
+} catch (e) {
+  note(e.message, 'bad');
+}
+</script>
+</body>
+</html>

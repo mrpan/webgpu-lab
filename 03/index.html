@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>webgpu-lab · AI学WebGPU 交互实验</title>
+<title>03 · WGSL 插值与阶段间变量 | webgpu-lab</title>
 <link rel="icon" href="data:,">
 <style>
   :root { --bg: #f7f7f5; --fg: #1d1d1f; --muted: #6b6b70; --card: #ffffff; --line: #e3e3e0; --accent: #2f5bea; }
@@ -15,33 +15,28 @@
     font: 15px/1.6 system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; }
   main { max-width: 760px; margin: 0 auto; padding: 24px 16px 48px; }
   a { color: var(--accent); }
-  h1 { font-size: 1.5rem; margin: 0 0 4px; }
+  h1 { font-size: 1.4rem; margin: 8px 0 4px; }
   .sub { color: var(--muted); margin: 0 0 20px; }
   ol { list-style: none; padding: 0; margin: 0; }
   li { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin: 0 0 12px; }
   li p { margin: 4px 0 0; color: var(--muted); font-size: .9rem; }
-  footer { color: var(--muted); font-size: .85rem; margin-top: 24px; }
 </style>
 </head>
 <body>
 <main>
-  <h1>webgpu-lab</h1>
-  <p class="sub">公众号「小明学GIS」· AI学WebGPU 系列的交互实验页。每篇文章对应一个目录。</p>
+  <a href="../">← 系列索引</a>
+  <h1>03 · WGSL 插值与阶段间变量</h1>
+  <p class="sub">AI学WebGPU③：WGSL插值与旧语法陷阱</p>
   <ol>
     <li>
-      <a href="01/"><strong>01 · WebGPU 概念与浏览器检测</strong></a>
-      <p>先把 WebGPU 从网页到 GPU 的分层结构看明白，再检测自己的浏览器能不能跑。</p>
+      <a href="interpolation.html"><strong>顶点颜色怎么插值</strong></a>
+      <p>三个顶点三种颜色。把探针放到三角形上，对比 GPU 实际算出的颜色和按重心权重预测的颜色；切到 flat，整片只剩第一个顶点的颜色。</p>
     </li>
     <li>
-      <a href="02/"><strong>02 · 三角形与三种着色器</strong></a>
-      <p>一个三角形拆给三种着色器看：顶点算位置、片段算颜色、计算着色器先把坐标算出来。</p>
-    </li>
-    <li>
-      <a href="03/"><strong>03 · WGSL 插值与阶段间变量</strong></a>
-      <p>三个顶点三种颜色，中间的过渡是插值算的；再看顶点与片段之间靠 @location 怎么接线，接错会报什么。</p>
+      <a href="io-wiring.html"><strong>阶段间变量接线台</strong></a>
+      <p>改 location、类型或插值让顶点输出和片段输入对不上，把浏览器真实报的错原样打出来；还能贴一段 2021 年的旧 WGSL 看它怎么编译失败。</p>
     </li>
   </ol>
-  <footer>WebGPU 需要 HTTPS 和支持 WebGPU 的浏览器；不支持时，环境检测页会直接告诉你卡在哪一步。</footer>
 </main>
 </body>
 </html>
