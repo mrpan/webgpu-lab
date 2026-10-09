@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>03 · 阶段间变量接线台 | webgpu-lab</title>
+<title>03 · 阶段间变量：改一项看报错 | webgpu-lab</title>
 <link rel="icon" href="data:,">
 <style>
   :root {
@@ -61,12 +61,12 @@
 <body>
 <main>
   <a href="./">← 03 实验索引</a>
-  <h1>阶段间变量接线台</h1>
+  <h1>阶段间变量：改一项看报错</h1>
   <p class="sub">顶点着色器输出、片段着色器接收，靠的是 <code>@location</code> 的数字，不是变量名。把两边改得对不上，看浏览器报什么错——错误原文原样打在下面，不做任何改写。</p>
 
   <div class="panel">
     <div class="buttons">
-      <button id="p-ok" type="button">正确接线</button>
+      <button id="p-ok" type="button">三项都对上</button>
       <button id="p-loc" type="button" class="ghost">location 对不上</button>
       <button id="p-type" type="button" class="ghost">类型对不上</button>
       <button id="p-interp" type="button" class="ghost">只有一边写 flat</button>
@@ -95,7 +95,7 @@
         <div class="result" id="result">正在启动 WebGPU…</div>
         <div class="err" id="err" hidden></div>
         <canvas id="c" width="300" height="300"></canvas>
-        <p class="note">画得出来才说明这套接线是通的。报错时画布保持上一次的内容。</p>
+        <p class="note">画得出来才说明这三项都对上了。报错时画布保持上一次的内容。</p>
       </div>
     </div>
   </div>
@@ -234,7 +234,7 @@ async function run(src) {
   pass.draw(3);
   pass.end();
   device.queue.submit([encoder.finish()]);
-  result('ok', '接线通了：location、类型、插值三项都对得上，三角形画出来了。');
+  result('ok', 'location、类型、插值三项都对得上，三角形画出来了。');
 }
 
 const rerun = () => run(build());
