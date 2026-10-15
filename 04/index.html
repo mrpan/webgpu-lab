@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>04 · 从数据到像素 | webgpu-lab</title>
+<link rel="icon" href="data:,">
+<style>
+  :root { --bg: #f7f7f5; --fg: #1d1d1f; --muted: #6b6b70; --card: #ffffff; --line: #e3e3e0; --accent: #2f5bea; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #121214; --fg: #e8e8ea; --muted: #9a9aa2; --card: #1b1b1f; --line: #2c2c32; --accent: #6f8fff; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg);
+    font: 15px/1.6 system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 24px 16px 48px; }
+  a { color: var(--accent); }
+  h1 { font-size: 1.4rem; margin: 8px 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 20px; }
+  ol { list-style: none; padding: 0; margin: 0; }
+  li { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin: 0 0 12px; }
+  li p { margin: 4px 0 0; color: var(--muted); font-size: .9rem; }
+</style>
+</head>
+<body>
+<main>
+  <a href="../">← 系列索引</a>
+  <h1>04 · 从数据到像素</h1>
+  <p class="sub">AI学WebGPU④：地图怎么从数据变成像素</p>
+  <ol>
+    <li>
+      <a href="geojson-to-pixels.html"><strong>从 GeoJSON 到屏幕像素</strong></a>
+      <p>一份真实的成都市边界，五步走完：经纬度 → 墨卡托 → −1~1 → 三角形 → 像素。每步的点数、三角形数、顶点缓冲区字节数、三角化耗时和着色像素数都是当场算的；抽稀档位可以切换，看顶点和像素这两笔账怎么变。</p>
+    </li>
+  </ol>
+</main>
+</body>
+</html>
