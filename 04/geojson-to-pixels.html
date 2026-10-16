@@ -99,7 +99,7 @@
       <div>
         <ol class="steps" id="steps">
           <li data-state="idle"><div class="hd"><span class="n">1</span>读数据：一串经纬度</div>
-            <div class="why">GeoJSON 里存的是坐标，不是图片</div></li>
+            <div class="why">GeoJSON 里存的是一串经纬度</div></li>
           <li data-state="idle"><div class="hd"><span class="n">2</span>投影：经纬度 → 墨卡托</div>
             <div class="why">经纬度是球面上的角度，屏幕是平面</div></li>
           <li data-state="idle"><div class="hd"><span class="n">3</span>归一化：→ −1~1 的画布坐标</div>
@@ -110,10 +110,10 @@
             <div class="why">顶点定位、光栅化、片段上色</div></li>
         </ol>
 
-        <h2>这一帧的账</h2>
+        <h2>这一遍算出来的数</h2>
         <table>
           <tr><th>边界点数</th><td class="num" id="r-pts">—</td></tr>
-          <tr><th>环数（含飞地）</th><td class="num" id="r-rings">—</td></tr>
+          <tr><th>环数（主环 + 外面的小块）</th><td class="num" id="r-rings">—</td></tr>
           <tr><th>三角形数</th><td class="num" id="r-tris">—</td></tr>
           <tr><th>顶点数（三角形 ×3）</th><td class="num" id="r-verts">—</td></tr>
           <tr><th>顶点缓冲区</th><td class="num" id="r-bytes">—</td></tr>
