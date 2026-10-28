@@ -12,6 +12,7 @@ https://mrpan.github.io/webgpu-lab/
 | `02/` | AI学WebGPU②：三角形里的三种着色器 | `triangle-anatomy.html` 三角形解剖；`three-shaders.html` 三种着色器；`triangle-steps.html` 九步步进器；`triangle-min.html` 最小三角形 |
 | `03/` | AI学WebGPU③：WGSL插值与旧语法陷阱 | `interpolation.html` 顶点颜色怎么插值；`io-wiring.html` 阶段间变量改一项看报错；`triangle-colors.html` 三色三角形 |
 | `04/` | AI学WebGPU④：地图怎么从数据变成像素 | `geojson-to-pixels.html` 从 GeoJSON 到屏幕像素（成都市边界五步拆解） |
+| `05/` | AI学WebGPU⑤：地图瓦片就是一张纹理 | `texture-min.html` 最小纹理，切换 nearest / linear |
 
 纯静态 HTML，无构建步骤、无外部依赖，单个文件可直接复制运行。
 WebGPU 只在安全上下文（HTTPS 或 localhost）下可用，本地调试请起一个本地服务，例如：
